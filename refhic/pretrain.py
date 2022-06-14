@@ -1,27 +1,11 @@
 import torch
-import pandas as pd
-from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
-from sklearn.utils import shuffle
-import h5py
 from torch.nn import functional as F
-from groupLoopModels import attentionToAdditionalHiC,baseline,focalLoss,elrBCE_loss
 import numpy as np
-from gcooler import gcool
-import click
-from data import  inMemoryDataset
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
-import torchmetrics
-import datetime
-import pickle
-from coteachingPlus import gen_forget_rate,coteachingPlusTrain
 from einops import rearrange
 from torchlars import LARS
 
-def contrastivePretrain(model,train_dataloader, lr, epochs, device):
-    lr=1e-1
-    # epochs=100
+def contrastivePretrain(model,train_dataloader, lr=1e-1, epochs=20, device=None):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr,eps=1e-8)
     optimizer = LARS(optimizer=optimizer, eps=1e-8, trust_coef=0.001)
     for epoch in tqdm(range(epochs)):
@@ -33,7 +17,6 @@ def contrastivePretrain(model,train_dataloader, lr, epochs, device):
             optimizer.zero_grad()
             samples = X[1].shape[1]
             embedding = model(X[1].to(device), X[2].to(device),pretrain=True) # B S H (Bx8x64)
-            # print(embedding.shape,'embedding.shape')
             pos=embedding[np.argwhere(target.flatten()==1).flatten(),:,:]
             neg=embedding[np.argwhere(target.flatten()==0).flatten(), :, :]
             dim = embedding.shape[-1]

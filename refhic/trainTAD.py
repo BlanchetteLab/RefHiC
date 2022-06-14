@@ -1,21 +1,21 @@
 import torch
 import pandas as pd
 from torch.utils.data import DataLoader
-import h5py
-from torchlars import LARS
-from groupLoopModels import attentionToAdditionalHiC,baseline,focalLoss,distilFocalLoss#, EMA
+from refhic.models import refhicNet
 from torch_ema import ExponentialMovingAverage as EMA
-from groupLoopModels import baseline as teacherModel
+
 import numpy as np
-from gcooler import gcool
+from refhic.bcooler import bcool
 import click
-from data import  inMemoryDataset
+from refhic.data import inMemoryDataset
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-import torchmetrics
 import datetime
 import pickle
-from pretrain import contrastivePretrain
+from refhic.config import checkConfig
+import sys
+
+
 import math
 
 class CosineScheduler:
@@ -42,14 +42,7 @@ class CosineScheduler:
                 math.pi * (epoch - self.warmup_steps) / self.max_steps)) / 2
         return self.base_lr
 
-
-
-
-
-
-
-
-def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,batchsize=128,TBWriter=None,baseline=False,scheduler=None,teacher=None,ema=None):
+def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,TBWriter=None,baseline=False,scheduler=None,ema=None):
     model.train()
 
     preds=[]
@@ -96,7 +89,7 @@ def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,batch
 
 
 
-def testModel(model, test_dataloaders,criterion, device,epoch,printData=False,TBWriter=None,baseline=False,teacher=None,ema=None):
+def testModel(model, test_dataloaders,criterion, device,epoch,printData=False,TBWriter=None,ema=None):
     model.eval()
     if ema:
         ema.store()
@@ -172,39 +165,39 @@ def seed_worker(worker_id):
 
 
 @click.command()
-@click.option('--lr', type=float, default=1e-3, help='learning rate')
-@click.option('--name',type=str,default='', help ='training name')
-@click.option('--batchsize', type=int, default=512, help='batch size')
-@click.option('--epochs', type=int, default=30, help='training epochs')
-@click.option('--gpu', type=int, default=0, help='GPU training')
+@click.option('--lr', type=float, default=1e-3, help='learning rate [1e-3]')
+@click.option('--batchsize', type=int, default=512, help='batch size [512]')
+@click.option('--epochs', type=int, default=500, help='training epochs [500]')
+@click.option('--gpu', type=int, default=0, help='GPU id [0]')
 @click.option('--trainingset', type=str, required=True, help='training data in .pkl or .h5 file; use if file existed; otherwise, prepare one for reuse')
-@click.option('--skipchrom', type=str, default=None, help='skip one chromosome for during training')
-@click.option('--resol', default=5000, help='resolution')
-@click.option('-n', type=int, default=10, help='sampling n samples from database; -1 for all')
+@click.option('--resol', default=5000, help='resolution [5000]')
+@click.option('-n', type=int, default=10, help='sampling n samples from database; -1 for all [10]')
 @click.option('--bedpe',type=str,default=None, help = '.bedpe file containing labelling cases')
-@click.option('--test', type=str, default=None, help='comma separated test files in .gcool')
-@click.option('--extra', type=str, default=None, help='a file contain a list of extra .gcools (i.e. database)')
+@click.option('--test', type=str, default=None, help='comma separated test files in .bcool')
+@click.option('--reference', type=str, default=None, help='a file contains reference panel')
 @click.option('--max_distance', type=int, default=3000000, help='max distance (bp) between contact pairs')
-@click.option('-w', type=int, default=10, help="peak window size: (2w+1)x(2w+1)")
-@click.option('--encoding_dim',type = int, default =64,help='encoding dim')
-@click.option('--oversampling',type=float, default = 1.0, help ='oversampling positive training cases, [0-2]')
-@click.option('--feature',type = str, default = '1,2,3,4,5', help = 'a list of comma separated features: 0: all features; 1: contact map; 2: distance normalized contact map;'
-                                                          '3: bias; 4: total RC; 5: P2LL; 6: distance; 7: center rank')
+@click.option('-w', type=int, default=20, help="peak window size: (2w+1)x(2w+1) [20]")
+@click.option('--encoding_dim',type = int, default =64,help='encoding dim [64]')
+@click.option('--feature',type = str, default = '1,2', help = 'a list of comma separated features: 0: all features; 1: contact map; 2: distance normalized contact map;'
+                                                          '3: bias; 4: total RC; 5: P2LL; 6: distance; 7: center rank  [1,2]')
 @click.option('--ti',type = int, default = None, help = 'use the indexed sample from the test group during training if multiple existed; values between [0,n)')
 @click.option('--eval_ti',type = str,default = None, help = 'multiple ti during validating, ti,coverage; ti:coverage,...')
-@click.option('--models',type=str,default ='groupLoop',help='groupLoop; baseline; groupLoop,baseline')
 @click.option('--prefix',type=str,default='',help='output prefix')
-@click.option('--teacher',type=str,default=None,help='teacher model')
 @click.option('--check_point',type=str,default=None,help='checkpoint')
-@click.option('--pw',type=float,default=-1,help='alpha for focal loss')
-@click.option('--cnn',type=bool,default=True,help='cnn encoder')
-@click.option('--useadam',type=bool,default=False,help='USE adam')
+@click.option('--cnn',type=bool,default=True,help='cnn encoder [True]')
+@click.option('--useadam',type=bool,default=True,help='USE adam [True]')
 @click.option('--lm',type=bool,default=True,help='large memory')
-@click.option('--useallneg',type=bool,default=False,help='use all negative cases')
-@click.option('--cawr',type=bool,default=False,help ='CosineAnnealingWarmRestarts')
-def trainAttention(useallneg,cawr,lm,useadam,cnn,pw,check_point,teacher,prefix,lr,name,batchsize, epochs, gpu, trainingset, skipchrom, resol, n, test, extra, bedpe, max_distance,w,oversampling,feature,ti,encoding_dim,models,eval_ti):
-    # if feature =='1,2':
-    #     lr=0.001
+@click.option('--cawr',type=bool,default=False,help ='CosineAnnealingWarmRestarts [False]')
+def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trainingset, resol, n, test, reference, bedpe, max_distance,w,feature,ti,encoding_dim,eval_ti):
+    """Train RefHiC for TAD boundary annotation"""
+    parameters = {'cnn': cnn, 'w': w, 'feature': feature, 'resol': resol, 'encoding_dim': encoding_dim,'model':'refhicNet-tad','classes':2}
+    if checkConfig():
+        pass
+    else:
+        print('Please run refhic config first.')
+        print('Good bye!')
+        sys.exit()
+
     if gpu is not None:
         device = torch.device("cuda:"+str(gpu))
         print('use gpu '+"cuda:"+str(gpu))
@@ -251,8 +244,8 @@ def trainAttention(useallneg,cawr,lm,useadam,cnn,pw,check_point,teacher,prefix,l
 
 
     if test is not None and extra is not None and bedpe is not None:
-        testGcools  = [gcool(file_path+'::/resolutions/'+str(resol)) for file_path in test.split(',')]
-        extraGcools = [gcool(file_path+'::/resolutions/'+str(resol)) for file_path in pd.read_csv(extra, header=None)[0].to_list()]
+        testBcools  = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in test.split(',')]
+        extraBcools = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in pd.read_csv(extra, header=None)[0].to_list()]
         _bedpe = pd.read_csv(bedpe, header=None, sep='\t')
 
         # read labels
@@ -278,7 +271,7 @@ def trainAttention(useallneg,cawr,lm,useadam,cnn,pw,check_point,teacher,prefix,l
             for i in range(len(labels[chrom]['label'])):
                 label[chrom].append(labels[chrom]['label'][i])
 
-            for g in testGcools:
+            for g in testBcools:
                 if chrom not in X:
                     X[chrom] = [[] for _ in range(len(labels[chrom]['contact']))]
                 bmatrix = g.bchr(chrom, max_distance=max_distance)
@@ -288,7 +281,7 @@ def trainAttention(useallneg,cawr,lm,useadam,cnn,pw,check_point,teacher,prefix,l
                     mat,meta = bmatrix.square(x,y,w,'b')
                     X[chrom][i].append(np.concatenate((mat.flatten(), meta)))
 
-            for g in extraGcools:
+            for g in extraBcools:
                 if chrom not in Xs:
                     Xs[chrom] = [[] for _ in range(len(labels[chrom]['contact']))]
                 bmatrix = g.bchr(chrom, max_distance=max_distance)
@@ -344,10 +337,7 @@ def trainAttention(useallneg,cawr,lm,useadam,cnn,pw,check_point,teacher,prefix,l
     print('#test:', len(y_label_test))
     print('#validation:', len(y_label_val))
 
-    if skipchrom is None:
-        prefix = prefix+'_feature'+str(feature)
-    else:
-        prefix = prefix+'_feature'+str(feature) + '_chr' + str(skipchrom)
+    prefix = prefix+'_feature'+str(feature)
 
 
     print('#training cases',len(y_label_train))
@@ -368,86 +358,81 @@ def trainAttention(useallneg,cawr,lm,useadam,cnn,pw,check_point,teacher,prefix,l
         val_dataloaders[_k] = DataLoader(val_data, batch_size=batchsize, shuffle=True,num_workers=1)
 
 
-    if 'grouploop' in models.lower():
-        print('without co-teaching')
-        earlyStopping = {'patience':200000000,'loss':np.inf,'wait':0,'state':None,'epoch':0}
 
-        model = attentionToAdditionalHiC(np.sum(featureMask),encoding_dim=encoding_dim,CNNencoder=cnn,win=2*w+1,classes=2).to(device)
-        ema = EMA(model.parameters(), decay=0.999)
+    earlyStopping = {'patience':200000000,'loss':np.inf,'wait':0,'model_state_dict':None,'epoch':0,'parameters':None}
 
-        lossfn = torch.nn.MSELoss()
+    model = refhicNet(np.sum(featureMask),encoding_dim=encoding_dim,CNNencoder=cnn,win=2*w+1,classes=2).to(device)
+    ema = EMA(model.parameters(), decay=0.999)
 
-        TBWriter = SummaryWriter(comment=' '+name)
+    lossfn = torch.nn.MSELoss()
 
-        model.train()
+    TBWriter = SummaryWriter(comment=' '+prefix)
 
-        if check_point:
-            _modelstate = torch.load(check_point, map_location='cuda:' + str(gpu))
-            if 'model_state_dict' in _modelstate:
-                _modelstate = _modelstate['model_state_dict']
-            model.load_state_dict(_modelstate)
+    model.train()
 
+    if check_point:
+        _modelstate = torch.load(check_point, map_location='cuda:' + str(gpu))
+        if 'model_state_dict' in _modelstate:
+            _modelstate = _modelstate['model_state_dict']
+        model.load_state_dict(_modelstate)
 
 
 
-        optimizer = torch.optim.SGD(model.parameters(),lr=lr,momentum=0.9,nesterov=True)
 
-        if useadam:
-            optimizer = torch.optim.AdamW(model.parameters(), lr=lr,weight_decay=0.1)
+    optimizer = torch.optim.SGD(model.parameters(),lr=lr,momentum=0.9,nesterov=True)
 
-        if cawr:
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50)
+    if useadam:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr,weight_decay=0.1)
+
+    if cawr:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50)
+    else:
+        scheduler = None
+        scheduler2 = CosineScheduler(int(epochs*0.95), warmup_steps=0, base_lr=lr, final_lr=1e-6)
+
+
+    for epoch in tqdm(range(0, epochs)):
+
+
+        if not cawr:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = scheduler2(epoch)
+
+        trainLoss=trainModel(model,train_dataloader, optimizer, lossfn, epoch, device,batchsize,TBWriter=TBWriter,scheduler=scheduler,ema=ema)
+        testLoss=testModel(model,val_dataloaders, lossfn,device,epoch,TBWriter=TBWriter,printData= False,ema=None)
+
+
+        if testLoss < earlyStopping['loss'] and earlyStopping['wait']<earlyStopping['patience']:
+            earlyStopping['loss'] = testLoss
+            earlyStopping['epoch'] = epoch
+            earlyStopping['wait'] = 0
+            earlyStopping['model_state_dict'] = model.state_dict()
+            earlyStopping['parameters']=parameters,
         else:
-            scheduler = None
-            scheduler2 = CosineScheduler(int(epochs*0.95), warmup_steps=0, base_lr=lr, final_lr=1e-6)
+            earlyStopping['wait'] += 1
+        if epoch%10==0:
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': testLoss,
+                'parameters': parameters,
+            }, prefix+'_groupLoop_epoch'+str(epoch)+'.tar')
 
-
-        for epoch in tqdm(range(0, epochs)):
-
-
-            if not cawr:
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = scheduler2(epoch)
-
-            trainLoss=trainModel(model,train_dataloader, optimizer, lossfn, epoch, device,batchsize,TBWriter=TBWriter,scheduler=scheduler,teacher=teacher,ema=ema)
-            testLoss=testModel(model,val_dataloaders, lossfn,device,epoch,TBWriter=TBWriter,printData= False,teacher=teacher,ema=None)
-
-
-            if testLoss < earlyStopping['loss'] and earlyStopping['wait']<earlyStopping['patience']:
-                earlyStopping['loss'] = testLoss
-                earlyStopping['epoch'] = epoch
-                earlyStopping['wait'] = 0
-                earlyStopping['state'] = model.state_dict()
-            else:
-                earlyStopping['wait'] += 1
-            if epoch%10==0:
+            if ema:
+                ema.store()
+                ema.copy_to()
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': testLoss,
-                }, prefix+'_groupLoop_epoch'+str(epoch)+'.tar')
-
-                if ema:
-                    ema.store()
-                    ema.copy_to()
-                    torch.save({
-                        'epoch': epoch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'loss': testLoss,
-                    }, prefix+'_groupLoop_epoch'+str(epoch)+'_ema.tar')
-                    ema.restore()
+                    'parameters':parameters,
+                }, prefix+'_groupLoop_epoch'+str(epoch)+'_ema.tar')
+                ema.restore()
 
         print('finsh trying; best model with early stopping is epoch: ',earlyStopping['epoch'], 'loss is ',earlyStopping['loss'])
-        torch.save(earlyStopping['state'], prefix+'_groupLoop_bestModel_state.pt')
-
-
-
-
-
-
-
+        torch.save(earlyStopping, prefix+'_groupLoop_bestModel_state.pt')
 
 if __name__ == '__main__':
-    trainAttention()
+    train()

@@ -4,25 +4,34 @@ from sklearn.neighbors import KDTree
 from matplotlib import pylab as plt
 from scipy.sparse import coo_matrix
 import pandas as pd
+
+
+def compute_cluster_stats(df):
+    df['cluster_size'] = df.shape[0]
+    df['neg_log10_fdr'] = np.sum(-np.log10(df['fdr_dist']))
+    #df['summit'] = 0
+    #df.loc[df['fdr_dist'].idxmin(),'summit'] = 1
+    return df
+
+
 @click.command()
 @click.option('--dc', type=int, default=25000, help='distance cutoff for local density calculation in terms of bp. default: 25000')
-@click.option('--prob', type=str,required=True, help='grouploop probs')
 @click.option('--minprob', type=float,default=0.5, help='min grouploop probs')
 @click.option('--resol', default=5000, help='resolution')
-@click.option('--interactive',default=True,type=bool,help='interactive mode for cutoff choosing')
+@click.option('--interactive',default=False,type=bool,help='interactive mode for cutoff choosing')
 @click.option('--minrho', type=float, default=10, help='min rho')
 @click.option('--mindelta', type=float, default=5, help='min delta')
-@click.option('--output',type=str,default = None,help ='output file name')
 @click.option('--refine',type=bool,default = True,help ='refine')
 @click.option('--chrom',type=str,default = None,help ='chrom')
-def pool(dc,prob,resol,interactive,minrho,mindelta,minprob,output,refine,chrom):
+@click.argument('candidates', type=str,required=True)
+@click.argument('output', type=str,required=True)
+def pool2(dc,candidates,resol,interactive,minrho,mindelta,minprob,output,refine,chrom):
+    '''call loop from loop candidates by clustering'''
     dc=dc/resol
-    data = pd.read_csv(prob, sep='\t', header=None)
+    data = pd.read_csv(candidates, sep='\t', header=None)
     data = data[data[6] > minprob].reset_index(drop=True)
-    # data = data[data[8] >= 0.1].reset_index(drop=True)
-    data = data[data[4] - data[1] > 11*5000].reset_index(drop=True)
-    # data = data[data[4] - data[1] < 250* 5000].reset_index(drop=True)
-    pos = data[[1, 4]].to_numpy() // 5000
+    data = data[data[4] - data[1] > 11*resol].reset_index(drop=True)
+    pos = data[[1, 4]].to_numpy() // resol
     val = data[6].to_numpy()#*data[7].to_numpy()
 
     # remove singleton
@@ -111,14 +120,65 @@ def pool(dc,prob,resol,interactive,minrho,mindelta,minprob,output,refine,chrom):
         mindelta = float(input("Enter min delta:"))
         print("min delta is: ", mindelta)
     centroid = np.argwhere((rhos > minrho) & (deltas > mindelta)).flatten()
+    print(len(centroid))
+
+    ########################################################################
+    ########################################################################
+    # candidates = {'ro': rhos, 'delta': deltas}
+    # candidates=pd.DataFrame.from_dict(candidates)
+    # candidates['eta'] = candidates['ro'] * candidates['delta']
+    # candidates['rank'] = candidates['eta'].rank(ascending=False, method='dense')
+    #
+    # temp_rank = candidates['rank'] / max(candidates['rank'])
+    #
+    # temp_eta = candidates['eta'] / max(candidates['eta'])
+    #
+    # candidates['transformed_rank'] = (temp_rank - temp_eta) / np.sqrt(2)
+    # candidates['transformed_eta'] = (temp_eta + temp_rank) / np.sqrt(2)
+    # plt.figure()
+    # plt.plot(candidates['transformed_rank'], candidates['transformed_eta'], '.')
+    # plt.show()
+    # # print(candidates.shape, ':canidates shape')
+    # # print(candidates['transformed_eta'].idxmin(), 'idxmin of transformed eta')
+    # breakpoint = candidates.iloc[candidates['transformed_eta'].idxmin()]['eta']
+    # # print(breakpoint, ':breakpoint')
+    # candidates['eta_cluster'] = -1
+    # candidates.loc[candidates['eta'] > breakpoint, 'eta_cluster'] = candidates.loc[
+    #     candidates['eta'] > breakpoint, 'eta_cluster'].rank(ascending=False, method='first')
+    #
+    # print(candidates)
+    # candidates.to_csv('candidates.tsv', sep='\t', header=True, index=False)
+    # # while candidates['eta_cluster'].to_list() != previous:
+    # #     # print('iteration')
+    # #     previous = candidates['eta_cluster'].tolist()
+    # #     candidates['eta_cluster'] = candidates.apply(get_nearest_higher_density_cluster, axis=1, candidates=candidates,
+    # #                                                  breakpoint=breakpoint)
+    # #
+    # # candidates = candidates.groupby('eta_cluster').apply(compute_cluster_stats)
+    # # candidates = candidates.groupby('eta_cluster').apply(find_cluster_summits, summit_gap=summit_gap)
+    ###########################################################################
+    ############################################################################
 
 
 
     # deltas[deltas<6]=-1
     # # deltas[deltas > 5] = 1
-    theta = rhos * deltas
+    theta = rhos * deltas#/(np.max(rhos)*np.max(deltas))
+    # theta /=np.max(theta)
+    data['rhos']=rhos
+    data['deltas']=deltas
+    data['theta']=theta
+    data['type']= output
+    data.to_csv(output, sep='\t', header=False, index=False)
+
+    #
+    # print(data)
+    # print(data.shape,len(theta),len(deltas),len(rhos))
+    import sys
+    sys.exit(0)
     # theta[deltas<6]=0
     # theta /= np.max(theta)
+    # theta*=2
     thetaorder = np.argsort(-theta)
     n = np.linspace(1, len(theta), len(theta))
 
@@ -174,21 +234,21 @@ def pool(dc,prob,resol,interactive,minrho,mindelta,minprob,output,refine,chrom):
 
 
     # plt.figure()
-    coo = coo_matrix((val, (pos[:, 0].astype(int), pos[:, 1].astype(int))), dtype=float)
+    # coo = coo_matrix((val, (pos[:, 0].astype(int), pos[:, 1].astype(int))), dtype=float)
     # plt.imshow(coo.toarray())
     # plt.scatter(pos[centroid][:, 1], pos[centroid][:, 0], label='propose')
     # plt.scatter(pos[refinedLoop][:, 1], pos[refinedLoop][:, 0], label='refine propose')
-    target = pd.read_csv('target.bedpe', header=None, sep='\t')
-    target=target[target[0]==chrom]
-    tpos = (target[[1, 4]] // 5000).drop_duplicates().to_numpy()
+    # target = pd.read_csv('target.bedpe', header=None, sep='\t')
+    # target=target[target[0]==chrom]
+    # tpos = (target[[1, 4]] // 5000).drop_duplicates().to_numpy()
     # plt.scatter(tpos[:, 1], tpos[:, 0], label='Target', facecolors='black', edgecolors='none')
 
-    correct = np.array([x for x in set(tuple(x) for x in tpos) & set(tuple(x) for x in pos[refinedLoop])])
+    # correct = np.array([x for x in set(tuple(x) for x in tpos) & set(tuple(x) for x in pos[refinedLoop])])
     # plt.scatter(correct[:, 1], correct[:, 0], label='match',color='red')
     # plt.title(str(prob)[:10]+','+str(len(correct)))
-    print('refine',prob,str(len(correct)), ' .....')
-    correct = np.array([x for x in set(tuple(x) for x in tpos) & set(tuple(x) for x in pos[centroid])])
-    print('original',prob, str(len(correct)), ' .....')
+    # print('refine',candidates,str(len(correct)), ' .....')
+    # correct = np.array([x for x in set(tuple(x) for x in tpos) & set(tuple(x) for x in pos[centroid])])
+    # print('original',candidates, str(len(correct)), ' .....')
     # plt.legend()
     # plt.xlim([2400, 3400])
     # plt.ylim([2400, 3400])

@@ -2,7 +2,6 @@ import numpy as np
 from torch.utils.data import Dataset
 import h5py
 import torch
-from gcooler import gcool
 
 class indexNamedHDF5Dataset(Dataset):
     '''
@@ -52,7 +51,7 @@ class indexNamedHDF5Dataset(Dataset):
         X = X.flatten()
         return X,Xs,label
 
-class diagGcoolsDataset(Dataset):
+class diagBcoolsDataset(Dataset):
     def __init__(self, test, extra,w,resol,samples=None):
 
         self.test = test
@@ -60,14 +59,14 @@ class diagGcoolsDataset(Dataset):
         self.numOfExtras = len(self.extra)
         self.samples = samples
         self.w = w
-        self.max_distance_bins = self.test.max_distance_bins
+        self.max_distance_bins = self.test[0].max_distance_bins
         self.resol = resol
 
-        bin2bp = dict((v, k) for k, v in self.test.bp2bin.items())
-        loci = np.argwhere(test.bmatrix[:,[0]]>=0)
+        bin2bp = dict((v, k) for k, v in self.test[0].bp2bin.items())
+        loci = np.argwhere(test[0].bmatrix[:,[0]]>=0)
 
-        loci = loci[ (loci[:,0]>3*w) & (loci[:,0]<self.test.bmatrix.shape[0]-w)]
-        self.loci = [(bin2bp[x + self.test.offset], bin2bp[y + x + self.test.offset]) for x, y in loci]
+        loci = loci[ (loci[:,0]>3*w) & (loci[:,0]<self.test[0].bmatrix.shape[0]-w)]
+        self.loci = [(bin2bp[x + self.test[0].offset], bin2bp[y + x + self.test[0].offset]) for x, y in loci]
 
     def __selectSamples(self,N,n=1):
         '''
@@ -83,9 +82,15 @@ class diagGcoolsDataset(Dataset):
     def __getitem__(self, idx):
         xCenter,yCenter = self.loci[idx]
 
-        mat, meta = self.test.square(xCenter, yCenter, self.w, 'b',cache=False)
-        X = np.concatenate((mat.flatten(), meta)).flatten()
+        X = []
         Xs = []
+        for i in range(len(self.test)):
+            mat, meta = self.test[i].square(xCenter, yCenter, self.w, 'b',cache=False)
+            # X = np.concatenate((mat.flatten(), meta)).flatten()
+            X.append(
+                np.concatenate((mat.flatten(), meta))
+            )
+
         if self.samples is not None:
             for i in self.__selectSamples(self.numOfExtras,self.samples):
                 mat, meta = self.extra[i].square(xCenter, yCenter, self.w, 'b',cache=False)
@@ -95,11 +100,12 @@ class diagGcoolsDataset(Dataset):
                 mat, meta = self.extra[i].square(xCenter, yCenter, self.w, 'b',cache=False)
                 Xs.append(np.concatenate((mat.flatten(), meta)))
         Xs = np.vstack(Xs)
+        X = np.vstack(X)
         Xs = torch.from_numpy(Xs).float()
         X = torch.from_numpy(X).float()
         return X,Xs,(xCenter,yCenter)
 
-class gcoolsDataset(Dataset):
+class bcoolsDataset(Dataset):
     def __init__(self, test, extra,w,resol,samples=None):
 
         self.test = test
@@ -107,16 +113,16 @@ class gcoolsDataset(Dataset):
         self.numOfExtras = len(self.extra)
         self.samples = samples
         self.w = w
-        self.max_distance_bins = self.test.max_distance_bins
+        self.max_distance_bins = self.test[0].max_distance_bins
         self.resol = resol
 
-        bin2bp = dict((v, k) for k, v in self.test.bp2bin.items())
-        nne = np.argwhere(self.test.bmatrix > 0)
+        bin2bp = dict((v, k) for k, v in self.test[0].bp2bin.items())
+        nne = np.argwhere(self.test[0].bmatrix > 0)
         # nne = nne[ (nne[:, 1] > w+1) & (nne[:, 1] < self.test.bmatrix.shape[1] - 2*w)& (nne[:, 0]+nne[:, 1] < self.test.bmatrix.shape[0] - 2*w)]
-        nne = nne[(nne[:, 1] > 5) & (nne[:, 1] < self.test.bmatrix.shape[1] - 2 * w) & (
-                    nne[:, 0] + nne[:, 1] < self.test.bmatrix.shape[0] - 2 * w-1)]
-        nne = nne[ (nne[:,0]>3*w) & (nne[:,0]<self.test.bmatrix.shape[0]-2*w)]
-        self.nne = [(bin2bp[x + self.test.offset], bin2bp[y + x + self.test.offset]) for x, y in nne]
+        nne = nne[(nne[:, 1] > 5) & (nne[:, 1] < self.test[0].bmatrix.shape[1] - 2 * w) & (
+                    nne[:, 0] + nne[:, 1] < self.test[0].bmatrix.shape[0] - 2 * w-1)]
+        nne = nne[ (nne[:,0]>3*w) & (nne[:,0]<self.test[0].bmatrix.shape[0]-2*w)]
+        self.nne = [(bin2bp[x + self.test[0].offset], bin2bp[y + x + self.test[0].offset]) for x, y in nne]
 
     def __selectSamples(self,N,n=1):
         '''
@@ -131,10 +137,15 @@ class gcoolsDataset(Dataset):
 
     def __getitem__(self, idx):
         xCenter,yCenter = self.nne[idx]
-
-        mat, meta = self.test.square(xCenter, yCenter, self.w, 'b',cache=False)
-        X = np.concatenate((mat.flatten(), meta)).flatten()
+        X = []
         Xs = []
+        for i in range(len(self.test)):
+            mat, meta = self.test[i].square(xCenter, yCenter, self.w, 'b',cache=False)
+            # X = np.concatenate((mat.flatten(), meta)).flatten()
+            X.append(
+                np.concatenate((mat.flatten(), meta))
+            )
+
         if self.samples is not None:
             for i in self.__selectSamples(self.numOfExtras,self.samples):
                 mat, meta = self.extra[i].square(xCenter, yCenter, self.w, 'b',cache=False)
@@ -143,7 +154,9 @@ class gcoolsDataset(Dataset):
             for i in range(self.numOfExtras):
                 mat, meta = self.extra[i].square(xCenter, yCenter, self.w, 'b',cache=False)
                 Xs.append(np.concatenate((mat.flatten(), meta)))
+
         Xs = np.vstack(Xs)
+        X = np.vstack(X)
         Xs = torch.from_numpy(Xs).float()
         X = torch.from_numpy(X).float()
         return X,Xs,(xCenter,yCenter)
@@ -230,16 +243,17 @@ class bedpewriter():
     def __init__(self,file_path, resol):
         self.f = open(file_path,'w')
         self.resol = resol
-    def write(self,chrom,x,y,prob,val,p2ll):
+    def write(self,chrom,x,y,prob,val,p2ll,labels):
         for i in range(len(x)):
             self.f.write(chrom+'\t'+str(x[i])+'\t'+str(x[i]+self.resol)
-                         +'\t'+chrom+'\t'+str(y[i]+1)+'\t'+str(y[i]+self.resol)
+                         +'\t'+chrom+'\t'+str(y[i])+'\t'+str(y[i]+self.resol)
                          +'\t'+str(prob[i])
                          +'\t'+str(val[i])
                          + '\t' + str(p2ll[i])
+                         + '\t' + str(labels[i])
                          +'\n')
 
-class gcoolDataset(Dataset):
+class bcoolDataset(Dataset):
     def __init__(self, test,w,resol):
 
         self.test = test

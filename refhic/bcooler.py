@@ -1,7 +1,26 @@
 import cooler
 import numpy as np
 from types import SimpleNamespace
+import random
+import sys
 
+def shuffleIFWithCount(df):
+    shuf=df[['count','balanced']].sample(frac=1)
+    df[['count','balanced']]=shuf[['count','balanced']].to_numpy()
+    return df
+
+def shuffleIF(df):
+    min=np.min(df['bin1_id'])
+    max=np.max(df['bin1_id'])
+    bin1_id=np.random.randint(min, high=max, size=len(df))
+    bin1_id.sort()
+    df['bin1_id']=bin1_id
+    df['bin2_id'] = df['bin1_id']+df['distance']
+
+    # sys.exit()
+    # shuf=df[['count','balanced']].sample(frac=1)
+    # df[['count','balanced']]=shuf[['count','balanced']].to_numpy()
+    return df
 
 class bandmatrix():
     def __init__(self, pixels, extent, max_distance_bins=None, bins=None, info=None):
@@ -241,7 +260,7 @@ class bandmatrix():
         yCenterRelativeBin = self.bp2bin[yCenter] - self.offset - xCenterRelativeBin
 
         # if yCenterRelativeBin + 2 * w >= self.max_distance_bins:
-        #     raise Exception("max distance in this gcool file is ", self.max_distance_bins * self.resol)
+        #     raise Exception("max distance in this bcool file is ", self.max_distance_bins * self.resol)
         topleft = [xCenterRelativeBin - w, yCenterRelativeBin - 2 * w]
         bottomright = [xCenterRelativeBin + w, yCenterRelativeBin + 2 * w]
 
@@ -278,20 +297,31 @@ class bandmatrix():
         return output
 
 
-class gcool(cooler.Cooler):
+class bcool(cooler.Cooler):
     def __init__(self, store):
         super().__init__(store)
 
-    def bchr(self, chrom, balance=True, max_distance=None, annotate=True):
+    def bchr(self, chrom, max_distance=None, annotate=True,decoy=False):
         '''
         get banded matrix for a given chrom
         '''
+        balance = True
         resol = self.info['bin-size']
-        if max_distance is not None and max_distance > self.info['max_distance']:
-            raise Exception("max distance in this gcool file is ", self.info['max_distance'])
+        if max_distance is not None and 'max_distance' in self.info and max_distance > self.info['max_distance']:
+            raise Exception("max distance in this bcool file is ", self.info['max_distance'])
         else:
-            max_distance = self.info['max_distance']
+            if 'max_distance' in self.info:
+                max_distance = self.info['max_distance']
+            else:
+                max_distance = 3000000
         pixels = self.matrix(balance=balance, as_pixels=True).fetch(chrom)
+        pixels=pixels[(pixels['bin2_id']-pixels['bin1_id']).abs()<max_distance//resol].reset_index(drop=True)
+
+        if decoy:
+            pixels['distance']=(pixels['bin2_id']-pixels['bin1_id']).abs()
+            pixels=pixels.groupby('distance').apply(shuffleIF)
+
+
         if annotate:
             bins = self.bins().fetch(chrom)
             info = self.info

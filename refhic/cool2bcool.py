@@ -6,14 +6,15 @@ from cooler.util import get_meta
 import posixpath
 
 @click.command()
-@click.option('--cool', help='.[m]cool file [input]')
-@click.option('--gcool', help='.gcool file [output]')
 @click.option('-u', type=int, default=3000000, help='distance upperbund [bp] [default=3000000]')
 @click.option('--resol',default=None,help='comma separated resols for output')
-def cli(cool, gcool,u,resol):
+@click.argument('cool', type=str,required=True)
+@click.argument('bcool', type=str,required=True)
+def cool2bcool(cool, bcool,u,resol):
+    '''covert a .mcool file to  [b]and cool file'''
     h5opts = _set_h5opts(None)
     copy = ['bins', 'chroms']
-    Ofile = h5py.File(gcool, 'w')
+    Ofile = h5py.File(bcool, 'w')
     Ifile = h5py.File(cool, 'r')
 
     if resol is None:
@@ -40,7 +41,7 @@ def cli(cool, gcool,u,resol):
         bins = c.bins()[:]
         pixels = []
         info = c.info
-        info['subformat'] = 'gcool'
+        info['subformat'] = 'bcool'
         info['max_distance'] = u
         info['full_nnz'] = info['nnz']
         info['full_sum'] = info['sum']
@@ -59,19 +60,19 @@ def cli(cool, gcool,u,resol):
         meta = get_meta(columns, dict(PIXEL_DTYPES), default_dtype=float)
 
         # write pixels
-        with h5py.File(gcool, "r+") as f:
+        with h5py.File(bcool, "r+") as f:
             h5 = f[group_path]
             grp = h5.create_group("pixels")
             max_size = n_bins * (n_bins - 1) // 2 + n_bins
             prepare_pixels(grp, n_bins, max_size, meta.columns, dict(meta.dtypes), h5opts)
 
         target = posixpath.join(group_path, 'pixels')
-        nnz, ncontacts = write_pixels(gcool, target, columns, pixels, h5opts, lock=None)
+        nnz, ncontacts = write_pixels(bcool, target, columns, pixels, h5opts, lock=None)
         info['nnz'] = nnz
         info['sum'] = ncontacts
 
         # write indexes
-        with h5py.File(gcool, "r+") as f:
+        with h5py.File(bcool, "r+") as f:
             h5 = f[group_path]
             grp = h5.create_group("indexes")
             chrom_offset = index_bins(h5["bins"], n_chroms, n_bins)
@@ -81,4 +82,4 @@ def cli(cool, gcool,u,resol):
 
 
 if __name__ == '__main__':
-    cli()
+    cool2bcool()

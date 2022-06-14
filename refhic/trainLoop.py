@@ -1,57 +1,89 @@
 import torch
 import pandas as pd
 from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
 import h5py
-from groupLoopModels import attentionToAdditionalHiC,baseline,focalLoss,elrBCE_loss,ensembles
+
+from refhic.models import refhicNet, baselineNet,focalLoss
+from torch_ema import ExponentialMovingAverage as EMA
+
 import numpy as np
-from gcooler import gcool
+from refhic.bcooler import bcool
 import click
-from data import  inMemoryDataset
+from refhic.data import  inMemoryDataset
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import torchmetrics
 import datetime
 import pickle
-from matplotlib import pylab as plt
-from coteachingPlus import gen_forget_rate,coteachingPlusTrain
-from scipy.stats import kstest
+from refhic.pretrain import contrastivePretrain
+import math
 
-def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,batchsize=128,TBWriter=None,baseline=False,elr=False):
+class CosineScheduler:
+    def __init__(self, max_update, base_lr=0.01, final_lr=0.0,
+               warmup_steps=0, warmup_begin_lr=0):
+        self.base_lr_orig = base_lr
+        self.max_update = max_update
+        self.final_lr = final_lr
+        self.warmup_steps = warmup_steps
+        self.warmup_begin_lr = warmup_begin_lr
+        self.max_steps = self.max_update - self.warmup_steps
+
+    def get_warmup_lr(self, epoch):
+        increase = (self.base_lr_orig - self.warmup_begin_lr) \
+                       * float(epoch) / float(self.warmup_steps)
+        return self.warmup_begin_lr + increase
+
+    def __call__(self, epoch):
+        if epoch < self.warmup_steps:
+            return self.get_warmup_lr(epoch)
+        if epoch <= self.max_update:
+            self.base_lr = self.final_lr + (
+                self.base_lr_orig - self.final_lr) * (1 + math.cos(
+                math.pi * (epoch - self.warmup_steps) / self.max_steps)) / 2
+        return self.base_lr
+
+
+
+def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,TBWriter=None,baseline=False,scheduler=None,ema=None):
     model.train()
+
     preds=[]
     targets = []
-    indices = []
-    for batch_idx,X in enumerate(train_dataloader):
 
+    iters = len(train_dataloader)
+
+    for batch_idx,X in enumerate(train_dataloader):
         target = X[-1].to(device)
+        X[1] = X[1].to(device)
+        X[2] = X[2].to(device)
+
+
         optimizer.zero_grad()
         if not baseline:
-            output = model(X[1].to(device),X[2].to(device))
+            output = model(X[1],X[2])
         else:
             output = model(X[1].to(device))
 
-        preds.append(output.cpu())
+        preds.append(torch.sigmoid(output[...,[-1]].cpu()))
         targets.append(target.cpu())
-        if elr:
-            # print('elr loss')
-            loss = criterion(X[0],output.view(-1), target.view(-1))
-            indices.append(X[0].cpu())
-        else:
-            # print('bce loss')
-            loss = criterion(output, target.view(-1, 1))
+
+        loss = criterion(output, target.repeat(1,output.shape[-1]))
+
 
         loss.backward()
+        # torch.nn.utils.clip_grad_norm_(model.parameters(),1)
         optimizer.step()
+        if ema:
+            ema.update()
+        if scheduler:
+            scheduler.step(epoch + batch_idx/ iters)
+
 
 
     preds=torch.vstack(preds).flatten()
     targets=torch.vstack(targets).flatten()
-    if elr:
-        indices = torch.hstack(indices)
-        loss = criterion(indices.cuda().view(-1),preds.cuda().view(-1), targets.cuda().view(-1),train=False)
-    else:
-        loss = criterion(preds, targets)
+
+    loss = criterion(preds, targets)
     acc = torchmetrics.functional.accuracy(preds, targets.to(int))
     f1 = torchmetrics.functional.f1(preds, targets.to(int))
     precision, recall = torchmetrics.functional.precision_recall(preds, targets.to(int))
@@ -66,22 +98,17 @@ def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,batch
         TBWriter.add_scalar("Recall/train", recall, epoch)
         TBWriter.add_scalar("positive/train", positive, epoch)
         TBWriter.add_scalar("negative/train", negative, epoch)
+
     return loss
 
 
 
-def testModel(model, test_dataloaders,criterion, device,epoch,printData=False,TBWriter=None,baseline=False,elr=False):
+def testModel(model, test_dataloaders,criterion, device,epoch,TBWriter=None,baseline=False,ema=None):
     model.eval()
-    if printData:
-        print('printData',printData)
-        missclassfied = {}
-        _filename = "missclassfied"
-        _suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S.pkl")
-        missclassfied['filename'] = "_".join([_filename, _suffix])
-        missclassfied['X'] = []
-        missclassfied['Xs'] = []
-        missclassfied['target'] = []
-        missclassfied['pred'] = []
+    if ema:
+        ema.store()
+        ema.copy_to()
+
 
     with torch.no_grad():
         losses = []
@@ -90,37 +117,32 @@ def testModel(model, test_dataloaders,criterion, device,epoch,printData=False,TB
             targets = []
             preds = []
             indices = []
+
             for X in test_dataloader:
-                target = X[-1].to(device)
+                target = X[-1]
+
+                target=target.to(device)
 
 
                 if not baseline:
-                    output = model(X[1].to(device), X[2].to(device))
+                    X[1]=X[1].to(device)
+                    X[2]=X[2].to(device)
+                    output = model(X[1],X[2])
+
                 else:
                     output = model(X[1].to(device))
-                if printData:
-                    failed= ((torch.sigmoid(output)>0.5)*1!=target).cpu().numpy().flatten()
-                    print('#failed',np.sum(failed))
-                    missclassfied['pred'].append(torch.sigmoid(output).cpu().numpy().flatten()[failed])
-                    missclassfied['target'].append(target.cpu().numpy().flatten()[failed])
-                    missclassfied['X'].append(X[1][failed,...].numpy())
-                    missclassfied['Xs'].append(X[2][failed,...].numpy())
+                output=torch.sigmoid(output)
+
 
                 preds.append(output.cpu())
                 targets.append(target.cpu())
                 indices.append(X[0].cpu())
 
 
-
-
-
             preds=torch.vstack(preds).flatten()
             targets=torch.vstack(targets).flatten()
-            if elr:
-                indices = torch.hstack(indices).flatten()
-                loss = torch.mean(criterion(indices.cuda().view(-1), preds.cuda().view(-1), targets.cuda().view(-1),train=False))
-            else:
-                loss = torch.mean(criterion(preds, targets))
+
+            loss = torch.mean(criterion(preds, targets))
             losses.append(loss)
             acc = torchmetrics.functional.accuracy(preds, targets.to(int))
             f1 = torchmetrics.functional.f1(preds, targets.to(int))
@@ -139,15 +161,9 @@ def testModel(model, test_dataloaders,criterion, device,epoch,printData=False,TB
                 TBWriter.add_scalar("negative/test/"+key, negative, epoch)
                 TBWriter.add_scalar("allPos/test/"+key, allPos, epoch)
                 TBWriter.add_scalar("allNeg/test/"+key, allNeg, epoch)
-        if printData:
-            missclassfied['pred']=np.concatenate(missclassfied['pred'])
-            missclassfied['target']=np.concatenate(missclassfied['target'])
-            missclassfied['X']=np.concatenate(missclassfied['X'])
-            missclassfied['Xs']=np.concatenate(missclassfied['Xs'])
 
-            with open(missclassfied['filename'] , 'wb') as handle:
-                pickle.dump(missclassfied, handle, protocol=pickle.HIGHEST_PROTOCOL)
-                print('wrong classfied test cases are saved to ',missclassfied['filename'] )
+        if ema:
+            ema.restore()
         return np.mean(losses)
 
 import random
@@ -161,37 +177,43 @@ def seed_worker(worker_id):
 @click.option('--lr', type=float, default=1e-3, help='learning rate')
 @click.option('--name',type=str,default='', help ='training name')
 @click.option('--batchsize', type=int, default=512, help='batch size')
-@click.option('--epochs', type=int, default=20, help='training epochs')
+@click.option('--epochs', type=int, default=30, help='training epochs')
 @click.option('--gpu', type=int, default=0, help='GPU training')
 @click.option('--trainingset', type=str, required=True, help='training data in .pkl or .h5 file; use if file existed; otherwise, prepare one for reuse')
 @click.option('--skipchrom', type=str, default=None, help='skip one chromosome for during training')
 @click.option('--resol', default=5000, help='resolution')
 @click.option('-n', type=int, default=10, help='sampling n samples from database; -1 for all')
 @click.option('--bedpe',type=str,default=None, help = '.bedpe file containing labelling cases')
-@click.option('--test', type=str, default=None, help='comma separated test files in .gcool')
-@click.option('--extra', type=str, default=None, help='a file contain a list of extra .gcools (i.e. database)')
+@click.option('--test', type=str, default=None, help='comma separated test files in .bcool')
+@click.option('--extra', type=str, default=None, help='a file contain a list of extra .bcools (i.e. database)')
 @click.option('--max_distance', type=int, default=3000000, help='max distance (bp) between contact pairs')
 @click.option('-w', type=int, default=10, help="peak window size: (2w+1)x(2w+1)")
-@click.option('--encoding_dim',type = int, default =128,help='encoding dim')
+@click.option('--encoding_dim',type = int, default =64,help='encoding dim')
 @click.option('--oversampling',type=float, default = 1.0, help ='oversampling positive training cases, [0-2]')
-@click.option('--feature',type = str, default = 0, help = 'a list of comma separated features: 0: all features; 1: contact map; 2: distance normalized contact map;'
+@click.option('--feature',type = str, default = '1,2,3,4,5', help = 'a list of comma separated features: 0: all features; 1: contact map; 2: distance normalized contact map;'
                                                           '3: bias; 4: total RC; 5: P2LL; 6: distance; 7: center rank')
 @click.option('--ti',type = int, default = None, help = 'use the indexed sample from the test group during training if multiple existed; values between [0,n)')
 @click.option('--eval_ti',type = str,default = None, help = 'multiple ti during validating, ti,coverage; ti:coverage,...')
 @click.option('--models',type=str,default ='groupLoop',help='groupLoop; baseline; groupLoop,baseline')
-@click.option('--fr',type=float,default=0,help='forget rate')
-@click.option('--elr',type=bool,default=False, help ='elr loss training')
-@click.option('--elr_lambda',type=float,default=3, help ='elr Lambda; need to be very careful')
-@click.option('--elr_beta',type=float,default=0.9, help ='elr beta')
 @click.option('--prefix',type=str,default='',help='output prefix')
-@click.option('--savedModel',type=str,default=None,help='trained model')
-def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, gpu, trainingset, skipchrom, resol, n, test, extra, bedpe, max_distance,w,oversampling,feature,ti,encoding_dim,models,eval_ti,savedmodel):
+@click.option('--check_point',type=str,default=None,help='checkpoint')
+@click.option('--pw',type=float,default=-1,help='alpha for focal loss')
+@click.option('--cnn',type=bool,default=True,help='cnn encoder')
+@click.option('--useadam',type=bool,default=False,help='USE adam')
+@click.option('--lm',type=bool,default=True,help='large memory')
+@click.option('--useallneg',type=bool,default=False,help='use all negative cases')
+@click.option('--cawr',type=bool,default=False,help ='CosineAnnealingWarmRestarts')
+def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize, epochs, gpu, trainingset, skipchrom, resol, n, test, extra, bedpe, max_distance,w,oversampling,feature,ti,encoding_dim,models,eval_ti):
+    """Train RefHiC for loop annotation"""
+
+    parameters={'cnn':cnn,'w':w,'feature':feature,'resol':resol,'encoding_dim':encoding_dim,'model':'refhicNet-loop','classes':1}
     if gpu is not None:
         device = torch.device("cuda:"+str(gpu))
         print('use gpu '+"cuda:"+str(gpu))
     else:
         device = torch.device("cpu")
-
+    if lm:
+        occccccc = torch.zeros((256,1024,18000)).to(device)
     chromTest = {'chr15','chr16','chr17',15,16,17,'15','16','17'}
     chromVal = {'chr11','chr12',11,12,'11','12'}
     _mask = np.zeros(2 * (w * 2 + 1) ** 2 + 2 * (2 * w + 1) + 4)
@@ -231,8 +253,8 @@ def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, 
 
 
     if test is not None and extra is not None and bedpe is not None:
-        testGcools  = [gcool(file_path+'::/resolutions/'+str(resol)) for file_path in test.split(',')]
-        extraGcools = [gcool(file_path+'::/resolutions/'+str(resol)) for file_path in pd.read_csv(extra, header=None)[0].to_list()]
+        testBcools  = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in test.split(',')]
+        extraBcools = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in pd.read_csv(extra, header=None)[0].to_list()]
         _bedpe = pd.read_csv(bedpe, header=None, sep='\t')
 
         # read labels
@@ -252,7 +274,7 @@ def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, 
         trainingset_H5.create_group('label')
         idx = 0
         for chrom in labels:
-            for g in testGcools:
+            for g in testBcools:
                 if chrom not in X:
                     X[chrom] = [[] for _ in range(len(labels[chrom]['contact']))]
                 bmatrix = g.bchr(chrom, max_distance=max_distance)
@@ -261,7 +283,7 @@ def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, 
                     mat,meta = bmatrix.square(x,y,w,'b')
                     X[chrom][i].append(np.concatenate((mat.flatten(), meta)))
 
-            for g in extraGcools:
+            for g in extraBcools:
                 if chrom not in Xs:
                     Xs[chrom] = [[] for _ in range(len(labels[chrom]['contact']))]
                 bmatrix = g.bchr(chrom, max_distance=max_distance)
@@ -305,13 +327,16 @@ def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, 
 
 
         if oversampling>1:
-            _oversamples = np.random.choice(training_index[1], size=int(len(training_index[1])*(oversampling-1)), replace=False)
+            _oversamples = np.random.choice(training_index[1], size=int(len(training_index[1])*(oversampling-1)), replace=True)
             training_index[1] = training_index[1] + list(_oversamples)
         else:
             _samples = np.random.choice(training_index[1], size=int(len(training_index[1]) * oversampling),
                                                replace=False)
             training_index[1] = list(_samples)
-        training_index[0] = np.random.choice(training_index[0], size=int(len(training_index[1])),replace=False)
+        if useallneg:
+            pass
+        else:
+            training_index[0] = np.random.choice(training_index[0], size=int(len(training_index[1])),replace=False)
 
         y_label = []
         y_idx = []
@@ -359,7 +384,6 @@ def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, 
 
     elif trainingset.endswith('.pkl'):
         print('reading pkl')
-
         with open(trainingset, 'rb') as handle:
             X_train,Xs_train,y_label_train,\
                 X_test,Xs_test,y_label_test,\
@@ -367,15 +391,14 @@ def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, 
             for i in range(len(X_train)):
                 X_train[i] = X_train[i][:,featureMask]
                 Xs_train[i] = Xs_train[i][:,featureMask]
+
             for i in range(len(X_test)):
                 X_test[i] = X_test[i][:,featureMask]
                 Xs_test[i] = Xs_test[i][:,featureMask]
-
-                # Xs_test[i]=np.vstack([Xs_test[i],np.random.permutation(Xs_test[i].reshape(-1)).reshape(Xs_test[i].shape)])
-                # print(Xs_test[i].shape)
             for i in range(len(X_val)):
                 X_val[i] = X_val[i][:,featureMask]
                 Xs_val[i] = Xs_val[i][:,featureMask]
+
 
     if eval_ti is None:
         eval_ti = {}
@@ -396,162 +419,190 @@ def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, 
     if n == -1:
         n = None
 
+    training_data = inMemoryDataset(X_train,Xs_train,y_label_train,samples=n,ti=ti)
+    pretrain_data = inMemoryDataset(X_train,Xs_train,y_label_train,samples=n,ti=ti,multiTest=True)
 
-    test_dataloaders = {}
+    randGen = torch.Generator()
+    randGen.manual_seed(42)
+    train_dataloader = DataLoader(training_data, batch_size=batchsize, shuffle=True,num_workers=1,worker_init_fn = seed_worker)
+    pretrain_dataloader = DataLoader(pretrain_data, batch_size=512, shuffle=True, num_workers=1,
+                                  worker_init_fn=seed_worker)
+
+    val_dataloaders = {}
     for _k in eval_ti:
-        test_data = inMemoryDataset(X_test,Xs_test,y_label_test,samples=None,ti=eval_ti[_k])
-        test_dataloaders[_k] = DataLoader(test_data, batch_size=batchsize, shuffle=False,num_workers=1)
+        val_data = inMemoryDataset(X_val,Xs_val,y_label_val,samples=None,ti=eval_ti[_k])
+        val_dataloaders[_k] = DataLoader(val_data, batch_size=batchsize, shuffle=True,num_workers=1)
+
+
+    ######################################################################################################
+    ##   control set
+    # with open('20K_zeroLoop.h5.pkl', 'rb') as handle:
+    #     _, _, _, _, _, _, \
+    #     _X_val, _Xs_val, _y_label_val = pickle.load(handle)
+    #
+    #     for i in range(len(_X_val)):
+    #         _X_val[i] = _X_val[i][:, featureMask]
+    #         _Xs_val[i] = _Xs_val[i][:, featureMask]
+    #         _y_label_val[i] = 0
+    # val_data = inMemoryDataset(_X_val, _Xs_val, _y_label_val, samples=None, ti=0)
+    # val_dataloaders['control'] = DataLoader(val_data, batch_size=batchsize, shuffle=True, num_workers=1)
+    #
+    # with open('gm12878_chr3Aschr2.h5.pkl', 'rb') as handle:
+    #     _X_val, _Xs_val, _y_label_val,_, _, _, _, _, _ = pickle.load(handle)
+    #
+    #     for i in range(len(_X_val)):
+    #         _X_val[i] = _X_val[i][:, featureMask]
+    #         _Xs_val[i] = _Xs_val[i][:, featureMask]
+    # val_data = inMemoryDataset(_X_val, _Xs_val, _y_label_val, samples=None, ti=0)
+    # val_dataloaders['gm12878_chr3Aschr2'] = DataLoader(val_data, batch_size=batchsize, shuffle=True, num_workers=1)
+
+
+    ######################################################################################################
+
 
     if 'grouploop' in models.lower():
-        if ';' in savedmodel:
-            savedmodel=savedmodel.split(';')
-            models=[]
-            for _savemodel in savedmodel:
-                model = attentionToAdditionalHiC(np.sum(featureMask), encoding_dim=encoding_dim).to(
-                    device)
-                _modelstate = torch.load(_savemodel, map_location='cuda:' + str(gpu))
-                if 'model_state_dict' in _modelstate:
-                    _modelstate = _modelstate['model_state_dict']
-                model.load_state_dict(_modelstate)
-                model.eval()
-                models.append(model)
-            model = ensembles(models)
-        else:
-            model = attentionToAdditionalHiC(np.sum(featureMask), encoding_dim=encoding_dim).to(device)
-            _modelstate =torch.load(savedmodel, map_location='cuda:'+str(gpu))
+        earlyStopping = {'patience':200000000,'loss':np.inf,'wait':0,'model_state_dict':None,'epoch':0,'parameters':None}
+
+        model = refhicNet(np.sum(featureMask),encoding_dim=encoding_dim,CNNencoder=cnn,win=2*w+1).to(device)
+        ema = EMA(model.parameters(), decay=0.999)
+
+        # ema =None
+
+
+        criterion = focalLoss(alpha=pw, gamma=2, adaptive=True)
+
+        ### pretrain
+        if check_point is None:
+            model=contrastivePretrain(model,pretrain_dataloader,0.001,20,device)
+            torch.save({
+                'model_state_dict': model.state_dict(),
+            }, prefix + '_groupLoop_pretrain.tar')
+            pass
+        ### end of pretrain
+
+
+        TBWriter = SummaryWriter(comment=' '+name)
+
+        model.train()
+
+        if check_point:
+            _modelstate = torch.load(check_point, map_location='cuda:' + str(gpu))
             if 'model_state_dict' in _modelstate:
                 _modelstate = _modelstate['model_state_dict']
             model.load_state_dict(_modelstate)
-            model.eval()
-        with torch.no_grad():
-            for key in test_dataloaders:
-                preds = []
-                priors=[]
-                likelihoods = []
-                targets = []
-                for X in tqdm(test_dataloaders[key]):
-                    target = X[-1].to(device)
-
-                    otuput=model(X[1].to(device), X[2].to(device))
-                    output = torch.sigmoid(otuput)
-                    # ll = torch.sigmoid(ll)
-
-                    # print(output.shape,prior.shape,likelihood.shape)
-                    # priors.append(ll.cpu())
-                    # likelihoods.append(ll.cpu())
-                    preds.append(output.cpu())
-                    targets.append(target.cpu())
-                preds = torch.vstack(preds).flatten()
-                # priors=torch.vstack(priors).flatten()
-                # likelihoods = torch.vstack(likelihoods).flatten()
-                targets = torch.vstack(targets).flatten()
-
-                # plt.figure()
-                # colors = preds[targets==1].numpy()#>0.5
-                # plt.scatter(likelihoods[targets==1].numpy()[colors>0.5],priors[targets==1][colors>0.5].numpy(),c=colors[colors>0.5],marker='+',vmax=1,vmin=0)
-                # plt.scatter(likelihoods[targets == 1].numpy()[colors < 0.5], priors[targets == 1][colors < 0.5].numpy(),
-                #             c='red', marker='+')
-                # plt.plot([0.5,0.5],[0,1],color='gray')
-                # plt.plot([0, 1], [0.5, 0.5], color='gray')
-                # plt.xlim([0,1])
-                # plt.ylim([0, 1])
-                # plt.xlabel('likelihood')
-                # plt.ylabel('belief')
-                # # plt.plot([0,1],[1,0])
-                # plt.show()
-                # plt.savefig(key+'+.eps')
-                # plt.figure()
-                # colors = preds[targets == 0].numpy()# < 0.5
-                # plt.scatter(likelihoods[targets == 0].numpy()[colors<0.5], priors[targets == 0].numpy()[colors<0.5], c=colors[colors<0.5],marker='_',vmax=1,vmin=0)
-                # plt.scatter(likelihoods[targets == 0].numpy()[colors > 0.5], priors[targets == 0].numpy()[colors > 0.5],
-                #             c='red', marker='_')
-                # plt.plot([0.5, 0.5], [0, 1], color='gray')
-                # plt.plot([0, 1], [0.5, 0.5], color='gray')
-                # plt.xlim([0, 1])
-                # plt.ylim([0, 1])
-                # plt.xlabel('likelihood')
-                # plt.ylabel('belief')
-                # # plt.plot([0, 1], [1, 0])
-                # plt.show()
-                # plt.savefig(key + '-.eps')
-                acc = torchmetrics.functional.accuracy(preds, targets.to(int))
-                f1 = torchmetrics.functional.f1(preds, targets.to(int))
-                auroc = torchmetrics.functional.auroc(preds, targets.to(int))
-                precision, recall = torchmetrics.functional.precision_recall(preds, targets.to(int))
-
-                preds = preds.numpy()
-                # print(np.argwhere(preds>0.8))
-                targets = targets.numpy()
-                plt.figure()
-                plt.hist(preds[targets==0],bins=100,label='-',cumulative=False)
-                plt.hist(preds[targets == 1], bins=100, label='+',alpha=0.8,cumulative=False)
-                plt.plot([0.5, 0.5], [0, 300], color='red')
-                plt.legend()
-                # plt.show()
-
-                # likelihoods=likelihoods.numpy()
-                # plt.figure()
-                # plt.title('likelihoods')
-                # plt.hist(likelihoods[targets==0],bins=100,label='-',cumulative=False)
-                # plt.hist(likelihoods[targets == 1], bins=100, label='+',alpha=0.8,cumulative=False)
-                # plt.plot([0.5, 0.5], [0, 300], color='red')
-                # plt.legend()
-
-                print(key,'===========================')
-                print('acc=', acc)
-                print('f1=', f1)
-                print('precision=', precision)
-                print('recall=', recall)
-                print('auroc=', auroc)
-
-                print('ks(+,-)=',kstest(preds[targets==0],preds[targets==1]))
-                plt.show()
 
 
 
+        optimizer = torch.optim.SGD(model.parameters(),lr=lr,momentum=0.9,nesterov=True)
+        if useadam:
+            optimizer = torch.optim.AdamW(model.parameters(), lr=lr,weight_decay=0.1)
+
+        if cawr:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50)
+        else:
+            scheduler = None
+            scheduler2 = CosineScheduler(int(epochs*0.95), warmup_steps=0, base_lr=lr, final_lr=1e-6)
 
 
+        for epoch in tqdm(range(0, epochs)):
+            if not cawr:
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = scheduler2(epoch)
+
+            trainLoss=trainModel(model,train_dataloader, optimizer, criterion, epoch, device,batchsize,TBWriter=TBWriter,scheduler=scheduler,ema=ema)
+            testLoss=testModel(model,val_dataloaders, criterion,device,epoch,TBWriter=TBWriter,ema=None)
+
+            # schedulerLR.step()
 
 
+            if testLoss < earlyStopping['loss'] and earlyStopping['wait']<earlyStopping['patience']:
+                earlyStopping['loss'] = testLoss
+                earlyStopping['epoch'] = epoch
+                earlyStopping['wait'] = 0
+                earlyStopping['model_state_dict'] = model.state_dict()
+                earlyStopping['parameters']=parameters
+            else:
+                earlyStopping['wait'] += 1
+            if epoch%10==0:
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': testLoss,
+                    'parameters': parameters,
+                }, prefix+'_groupLoop_epoch'+str(epoch)+'.tar')
+
+                if ema:
+                    ema.store()
+                    ema.copy_to()
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'loss': testLoss,
+                        'parameters': parameters,
+                    }, prefix+'_groupLoop_epoch'+str(epoch)+'_ema.tar')
+                    ema.restore()
+
+        print('finsh trying; best model with early stopping is epoch: ',earlyStopping['epoch'], 'loss is ',earlyStopping['loss'])
+        torch.save(earlyStopping, prefix+'_groupLoop_bestModel_state.pt')
 
 
-
-
-    elif 'baseline' in models.lower():
+    if 'baseline' in models.lower():
         # baseline model
-        model = baseline(np.sum(featureMask),encoding_dim=encoding_dim).to(device)
-        model.load_state_dict(torch.load(savedmodel, map_location='cuda:'+str(gpu)),strict=False)
-        model.eval()
-        with torch.no_grad():
-            for key in test_dataloaders:
-                preds = []
-                targets = []
-                for X in tqdm(test_dataloaders[key]):
-                    target = X[-1].to(device)
-                    output = torch.sigmoid(model(X[1].to(device)))
-                    preds.append(output.cpu())
-                    targets.append(target.cpu())
-                preds = torch.vstack(preds).flatten()
-                targets = torch.vstack(targets).flatten()
+        parameters['model']='baselineNet-loop'
+        baselineModel = baselineNet(np.sum(featureMask),encoding_dim=encoding_dim,win=2*w+1).to(device)
+        ema = EMA(baselineModel.parameters(), decay=0.999)
+        TBWriterB = SummaryWriter(comment=' baseline '+name)
+        baselineModel.train()
+        #criterion = torch.nn.BCEWithLogitsLoss()
+        criterion = focalLoss(alpha=pw, gamma=2,adaptive=True)
+        # optimizer = torch.optim.Adam(baselineModel.parameters(), lr=lr, eps=1e-8, amsgrad=True)
+        optimizer = torch.optim.AdamW(baselineModel.parameters(), lr=lr, weight_decay=0.1)
+        scheduler = None#torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50)
+        scheduler2 = CosineScheduler(int(epochs * 0.95), warmup_steps=0, base_lr=lr, final_lr=1e-6)
 
-                acc = torchmetrics.functional.accuracy(preds, targets.to(int))
-                f1 = torchmetrics.functional.f1(preds, targets.to(int))
-                auroc = torchmetrics.functional.auroc(preds, targets.to(int))
-                precision, recall = torchmetrics.functional.precision_recall(preds, targets.to(int))
+        earlyStopping = {'patience': 500000, 'loss': np.inf, 'wait': 0, 'model_state_dict': None, 'epoch': 0,'parameters':None}
 
-                preds = preds.numpy()
-                targets = targets.numpy()
-                plt.figure()
-                plt.hist(preds[targets==0],bins=100,label='-')
-                plt.hist(preds[targets == 1], bins=100, label='+',alpha=0.8)
-                plt.legend()
-                print(key,'===========================')
-                print('acc=', acc)
-                print('f1=', f1)
-                print('precision=', precision)
-                print('recall=', recall)
-                print('auroc=', auroc)
-                plt.show()
+        for epoch in tqdm(range(epochs)):
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = scheduler2(epoch)
+            trainModel(baselineModel,train_dataloader, optimizer, criterion, epoch, device,batchsize,TBWriter=TBWriterB,baseline=True,scheduler=scheduler,ema=ema)
+            testLoss=testModel(baselineModel,val_dataloaders, criterion,device,epoch,TBWriter=TBWriterB,baseline=True)
+
+            if testLoss < earlyStopping['loss'] and earlyStopping['wait'] < earlyStopping['patience']:
+                earlyStopping['loss'] = testLoss
+                earlyStopping['epoch'] = epoch
+                earlyStopping['wait'] = 0
+                earlyStopping['parameters']=parameters
+                earlyStopping['state'] = baselineModel.state_dict()
+            else:
+                earlyStopping['wait'] += 1
+            if epoch % 10 == 0:
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': baselineModel.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': testLoss,
+                    'parameters':parameters,
+                }, prefix + '_baseline_epoch' + str(epoch) + '.tar')
+                if ema:
+                    ema.store()
+                    ema.copy_to()
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': baselineModel.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'loss': testLoss,
+                        'parameters': parameters,
+                    }, prefix + '_baseline_epoch' + str(epoch) + '_ema.tar')
+                    ema.restore()
+
+
+        print('finsh trying; best model with early stopping is epoch: ', earlyStopping['epoch'], 'loss is ',
+              earlyStopping['loss'])
+        torch.save(earlyStopping, prefix+'_baseline_bestModel_state.pt')
+
 
 
 
@@ -559,4 +610,4 @@ def trainAttention(prefix,lr,fr,elr,elr_lambda,elr_beta,name,batchsize, epochs, 
 
 
 if __name__ == '__main__':
-    trainAttention()
+    train()
