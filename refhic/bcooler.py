@@ -301,7 +301,7 @@ class bcool(cooler.Cooler):
     def __init__(self, store):
         super().__init__(store)
 
-    def bchr(self, chrom, max_distance=None, annotate=True,decoy=False):
+    def bchr(self, chrom, max_distance=None, annotate=True,decoy=False,restrictDecoy=False):
         '''
         get banded matrix for a given chrom
         '''
@@ -319,7 +319,10 @@ class bcool(cooler.Cooler):
 
         if decoy:
             pixels['distance']=(pixels['bin2_id']-pixels['bin1_id']).abs()
-            pixels=pixels.groupby('distance').apply(shuffleIF)
+            if restrictDecoy:
+                pixels = pixels.groupby('distance').apply(shuffleIFWithCount)
+            else:
+                pixels=pixels.groupby('distance').apply(shuffleIF)
 
 
         if annotate:

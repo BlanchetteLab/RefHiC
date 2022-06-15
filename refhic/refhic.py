@@ -6,15 +6,25 @@ from refhic.trainTAD import  train as trainTAD
 from refhic.config import config
 from refhic.cool2bcool import cool2bcool
 from refhic.poolLoop import pool
-from refhic.poolLoop2 import pool2
 
 @click.group()
 def cli():
+    '''RefHiC
+
+    A reference panel guided topological structure annotation of Hi-C data
+    '''
     pass
 
 @cli.group()
 def loop():
-    '''loop annotation'''
+    '''loop annotation
+
+    \b
+    annotation with a trained model:
+    1. run pred to detect loop candidates from Hi-C data
+    2. run pool to select final loop annotations from loop candidates
+
+    '''
     pass
 
 @cli.group()
@@ -32,7 +42,6 @@ util.add_command(cool2bcool)
 loop.add_command(trainLoop)
 loop.add_command(loopPred)
 loop.add_command(pool)
-loop.add_command(pool2)
 
 tad.add_command(trainTAD)
 tad.add_command(tadPred)

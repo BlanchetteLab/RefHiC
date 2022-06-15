@@ -14,6 +14,7 @@ import datetime
 import pickle
 from refhic.config import checkConfig
 import sys
+from refhic.config import referenceMeta
 
 
 import math
@@ -169,7 +170,6 @@ def seed_worker(worker_id):
 @click.option('--batchsize', type=int, default=512, help='batch size [512]')
 @click.option('--epochs', type=int, default=500, help='training epochs [500]')
 @click.option('--gpu', type=int, default=0, help='GPU id [0]')
-@click.option('--trainingset', type=str, required=True, help='training data in .pkl or .h5 file; use if file existed; otherwise, prepare one for reuse')
 @click.option('--resol', default=5000, help='resolution [5000]')
 @click.option('-n', type=int, default=10, help='sampling n samples from database; -1 for all [10]')
 @click.option('--bedpe',type=str,default=None, help = '.bedpe file containing labelling cases')
@@ -182,14 +182,21 @@ def seed_worker(worker_id):
                                                           '3: bias; 4: total RC; 5: P2LL; 6: distance; 7: center rank  [1,2]')
 @click.option('--ti',type = int, default = None, help = 'use the indexed sample from the test group during training if multiple existed; values between [0,n)')
 @click.option('--eval_ti',type = str,default = None, help = 'multiple ti during validating, ti,coverage; ti:coverage,...')
-@click.option('--prefix',type=str,default='',help='output prefix')
+
 @click.option('--check_point',type=str,default=None,help='checkpoint')
 @click.option('--cnn',type=bool,default=True,help='cnn encoder [True]')
 @click.option('--useadam',type=bool,default=True,help='USE adam [True]')
 @click.option('--lm',type=bool,default=True,help='large memory')
 @click.option('--cawr',type=bool,default=False,help ='CosineAnnealingWarmRestarts [False]')
+@click.argument('trainingset', type=str,required=True)
+@click.argument('prefix', type=str,required=True)
 def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trainingset, resol, n, test, reference, bedpe, max_distance,w,feature,ti,encoding_dim,eval_ti):
-    """Train RefHiC for TAD boundary annotation"""
+    """Train RefHiC for TAD boundary annotation
+
+    \b
+    TRAININGSET: training data in .pkl
+    PREFIX: output prefix
+    """
     parameters = {'cnn': cnn, 'w': w, 'feature': feature, 'resol': resol, 'encoding_dim': encoding_dim,'model':'refhicNet-tad','classes':2}
     if checkConfig():
         pass
@@ -197,6 +204,8 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
         print('Please run refhic config first.')
         print('Good bye!')
         sys.exit()
+
+    reference = referenceMeta(reference)
 
     if gpu is not None:
         device = torch.device("cuda:"+str(gpu))
@@ -243,9 +252,9 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
             print('        ',_cov,',',eval_ti[_cov])
 
 
-    if test is not None and extra is not None and bedpe is not None:
+    if test is not None and bedpe is not None:
         testBcools  = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in test.split(',')]
-        extraBcools = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in pd.read_csv(extra, header=None)[0].to_list()]
+        extraBcools = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in reference['file'].to_list()]
         _bedpe = pd.read_csv(bedpe, header=None, sep='\t')
 
         # read labels
@@ -316,7 +325,7 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
                     X_train.append(x)
                     Xs_train.append(xs)
                     y_label_train.append(label[chrom][i])
-        with open(trainingset + '.pkl', 'wb') as handle:
+        with open(trainingset, 'wb') as handle:
             pickle.dump((X_train, Xs_train, y_label_train,
                      X_test, Xs_test, y_label_test,
                      X_val, Xs_val, y_label_val), handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -417,7 +426,7 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': testLoss,
                 'parameters': parameters,
-            }, prefix+'_groupLoop_epoch'+str(epoch)+'.tar')
+            }, prefix+'_RefHiC-TAD_epoch'+str(epoch)+'.tar')
 
             if ema:
                 ema.store()
@@ -428,11 +437,11 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': testLoss,
                     'parameters':parameters,
-                }, prefix+'_groupLoop_epoch'+str(epoch)+'_ema.tar')
+                }, prefix+'_RefHiC-TAD_epoch'+str(epoch)+'_ema.tar')
                 ema.restore()
 
         print('finsh trying; best model with early stopping is epoch: ',earlyStopping['epoch'], 'loss is ',earlyStopping['loss'])
-        torch.save(earlyStopping, prefix+'_groupLoop_bestModel_state.pt')
+        torch.save(earlyStopping, prefix+'_RefHiC-TAD_bestModel_state.pt')
 
 if __name__ == '__main__':
     train()

@@ -84,7 +84,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
 
     for _chrom in chrom:
         print('analyzing chromosome ',_chrom,' ...')
-        bmatrix = [testBcool.bchr(_chrom, max_distance=max_distance,decoy=False),testBcool.bchr(_chrom, max_distance=max_distance,decoy=True)]
+        bmatrix = [testBcool.bchr(_chrom, max_distance=max_distance,decoy=False),testBcool.bchr(_chrom, max_distance=max_distance,decoy=True,restrictDecoy=True)]
         bmatrices = [x.bchr(_chrom,max_distance=max_distance) for x in extraBcools]
 
         if n == -1:
