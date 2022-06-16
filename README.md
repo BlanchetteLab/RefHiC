@@ -1,5 +1,4 @@
-# RefHiC
-A reference panel guided topological structure annotation of Hi-C data
+# RefHiC: A reference panel guided topological structure annotation of Hi-C data
 
 We suggest users run RefHiC on GPU. But, you can also run RefHiC on CPU for TAD/loop annotations. Model training on CPU is almost impossible. 
 ## Installation
