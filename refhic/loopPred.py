@@ -12,10 +12,10 @@ from refhic.config import checkConfig,loadConfig,referenceMeta
 
 
 @click.command()
-@click.option('--batchsize', type=int, default=2048, help='batch size')
-@click.option('--gpu', type=int, default=0, help='use GPU')
+@click.option('--batchsize', type=int, default=2048, help='batch size [2048]')
+@click.option('--gpu', type=int, default=0, help='use GPU [0]')
 @click.option('--chrom', type=str, default=None, help='loop  calling for comma separated chroms')
-@click.option('-n', type=int, default=-1, help='sampling n samples from database; -1 for all')
+@click.option('-n', type=int, default=-1, help='sampling n samples from database; -1 for all [-1]')
 @click.option('--reference', type=str, default=None, help='a file contains reference panel')
 @click.option('--max_distance', type=int, default=3000000, help='max distance (bp) between contact pairs')
 @click.option('--modelState',type=str,default =None,help='trained model')

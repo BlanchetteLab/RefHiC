@@ -67,7 +67,7 @@ class ensembles(nn.Module):
         return prob/len(self.models)
 
 class refhicNet(nn.Module):
-    def __init__(self, input_size, encoding_dim=128,header=8,CNNencoder=True,win=21,classes=1):
+    def __init__(self, input_size, encoding_dim=128,header=8,CNNencoder=True,win=21,classes=1,outputAct=None):
         super(refhicNet, self).__init__()
         self.input_size = input_size
         self.encoding_dim = encoding_dim
@@ -75,6 +75,7 @@ class refhicNet(nn.Module):
         self.CNNencoder=CNNencoder
         self.win=win
         self.classes=classes
+        self.outputAct=outputAct
 
         if CNNencoder:
             self.encoder = encoder(self.input_size,2,self.encoding_dim,self.win)
@@ -170,7 +171,8 @@ class refhicNet(nn.Module):
 
 
         output = self.predictor(torch.cat((x, testEncoding), -1))
-
+        if self.outputAct=='tanh':
+            output=torch.tanh(output)
         if returnAtten:
             return output,alpha
         return output

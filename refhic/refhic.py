@@ -6,6 +6,8 @@ from refhic.trainTAD import  train as trainTAD
 from refhic.config import config
 from refhic.cool2bcool import cool2bcool
 from refhic.poolLoop import pool
+from refhic.util import  pileup
+from refhic.traindata import traindata
 
 @click.group()
 def cli():
@@ -38,6 +40,9 @@ def util():
     pass
 
 util.add_command(cool2bcool)
+util.add_command(pileup)
+util.add_command(traindata)
+
 
 loop.add_command(trainLoop)
 loop.add_command(loopPred)

@@ -175,38 +175,26 @@ def seed_worker(worker_id):
 
 @click.command()
 @click.option('--lr', type=float, default=1e-3, help='learning rate')
-@click.option('--name',type=str,default='', help ='training name')
 @click.option('--batchsize', type=int, default=512, help='batch size')
 @click.option('--epochs', type=int, default=30, help='training epochs')
 @click.option('--gpu', type=int, default=0, help='GPU training')
-@click.option('--trainingset', type=str, required=True, help='training data in .pkl or .h5 file; use if file existed; otherwise, prepare one for reuse')
-@click.option('--skipchrom', type=str, default=None, help='skip one chromosome for during training')
-@click.option('--resol', default=5000, help='resolution')
 @click.option('-n', type=int, default=10, help='sampling n samples from database; -1 for all')
-@click.option('--bedpe',type=str,default=None, help = '.bedpe file containing labelling cases')
-@click.option('--test', type=str, default=None, help='comma separated test files in .bcool')
-@click.option('--extra', type=str, default=None, help='a file contain a list of extra .bcools (i.e. database)')
-@click.option('--max_distance', type=int, default=3000000, help='max distance (bp) between contact pairs')
-@click.option('-w', type=int, default=10, help="peak window size: (2w+1)x(2w+1)")
 @click.option('--encoding_dim',type = int, default =64,help='encoding dim')
-@click.option('--oversampling',type=float, default = 1.0, help ='oversampling positive training cases, [0-2]')
-@click.option('--feature',type = str, default = '1,2,3,4,5', help = 'a list of comma separated features: 0: all features; 1: contact map; 2: distance normalized contact map;'
-                                                          '3: bias; 4: total RC; 5: P2LL; 6: distance; 7: center rank')
 @click.option('--ti',type = int, default = None, help = 'use the indexed sample from the test group during training if multiple existed; values between [0,n)')
 @click.option('--eval_ti',type = str,default = None, help = 'multiple ti during validating, ti,coverage; ti:coverage,...')
-@click.option('--models',type=str,default ='groupLoop',help='groupLoop; baseline; groupLoop,baseline')
-@click.option('--prefix',type=str,default='',help='output prefix')
+@click.option('--models',type=str,default ='refhic',help='refhic, or baseline model; [refhic]')
 @click.option('--check_point',type=str,default=None,help='checkpoint')
 @click.option('--pw',type=float,default=-1,help='alpha for focal loss')
 @click.option('--cnn',type=bool,default=True,help='cnn encoder')
 @click.option('--useadam',type=bool,default=False,help='USE adam')
 @click.option('--lm',type=bool,default=True,help='large memory')
-@click.option('--useallneg',type=bool,default=False,help='use all negative cases')
 @click.option('--cawr',type=bool,default=False,help ='CosineAnnealingWarmRestarts')
-def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize, epochs, gpu, trainingset, skipchrom, resol, n, test, extra, bedpe, max_distance,w,oversampling,feature,ti,encoding_dim,models,eval_ti):
+@click.argument('traindata', type=str,required=True)
+@click.argument('prefix', type=str,required=True)
+def train(cawr,lm,useadam,cnn,pw,check_point,prefix,lr,batchsize, epochs, gpu, traindata, n,ti,encoding_dim,models,eval_ti):
     """Train RefHiC for loop annotation"""
 
-    parameters={'cnn':cnn,'w':w,'feature':feature,'resol':resol,'encoding_dim':encoding_dim,'model':'refhicNet-loop','classes':1}
+    parameters={'cnn':cnn,'encoding_dim':encoding_dim,'model':'refhicNet-loop'}
     if gpu is not None:
         device = torch.device("cuda:"+str(gpu))
         print('use gpu '+"cuda:"+str(gpu))
@@ -214,28 +202,6 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
         device = torch.device("cpu")
     if lm:
         occccccc = torch.zeros((256,1024,18000)).to(device)
-    chromTest = {'chr15','chr16','chr17',15,16,17,'15','16','17'}
-    chromVal = {'chr11','chr12',11,12,'11','12'}
-    _mask = np.zeros(2 * (w * 2 + 1) ** 2 + 2 * (2 * w + 1) + 4)
-    featureMask = feature.split(',')
-    if '0' in featureMask:
-        _mask[:] = 1
-    if '1' in featureMask:
-        _mask[:(2 * w + 1) ** 2] = 1
-    if '2' in featureMask:
-        _mask[(2 * w + 1) ** 2:2 * (2 * w + 1) ** 2] = 1
-    if '3' in featureMask:
-        _mask[2 * (2 * w + 1) ** 2:2 * (2 * w + 1) ** 2 + 2 * (2 * w + 1)] = 1
-    if '4' in featureMask:
-        _mask[2 * (2 * w + 1) ** 2 + 2 * (2 * w + 1)] = 1
-    if '5' in featureMask:
-        _mask[2 * (2 * w + 1) ** 2 + 2 * (2 * w + 1) + 1] = 1
-    if '6' in featureMask:
-        _mask[2 * (2 * w + 1) ** 2 + 2 * (2 * w + 1) + 2] = 1
-    if '7' in featureMask:
-        _mask[2 * (2 * w + 1) ** 2 + 2 * (2 * w + 1) + 3] = 1
-    featureMask = np.ma.make_mask(_mask)
-    print('#features',np.sum(featureMask))
 
     if eval_ti is not None:
         _eval_ti = {}
@@ -252,153 +218,16 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
             print('        ',_cov,',',eval_ti[_cov])
 
 
-    if test is not None and extra is not None and bedpe is not None:
-        testBcools  = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in test.split(',')]
-        extraBcools = [bcool(file_path+'::/resolutions/'+str(resol)) for file_path in pd.read_csv(extra, header=None)[0].to_list()]
-        _bedpe = pd.read_csv(bedpe, header=None, sep='\t')
-
-        # read labels
-        labels = {}
-        for _, chr1, pos1, _, chr2, pos2, _, label in _bedpe.itertuples():
-            if chr1 == chr2 and abs(pos2 - pos1) < max_distance:
-                if chr1 not in labels:
-                    labels[chr1] = {'contact':[],'label':[]}
-                labels[chr1]['contact'].append((pos1,pos2))
-                labels[chr1]['label'].append(label)
-
-        # read data of these labels
-        X = {}  # for test
-        Xs = {} # for extra
-        trainingset_H5 = h5py.File(trainingset, 'w')
-        trainingset_H5.create_group('feature')
-        trainingset_H5.create_group('label')
-        idx = 0
-        for chrom in labels:
-            for g in testBcools:
-                if chrom not in X:
-                    X[chrom] = [[] for _ in range(len(labels[chrom]['contact']))]
-                bmatrix = g.bchr(chrom, max_distance=max_distance)
-                for i in range(len(labels[chrom]['contact'])):
-                    x,y = labels[chrom]['contact'][i]
-                    mat,meta = bmatrix.square(x,y,w,'b')
-                    X[chrom][i].append(np.concatenate((mat.flatten(), meta)))
-
-            for g in extraBcools:
-                if chrom not in Xs:
-                    Xs[chrom] = [[] for _ in range(len(labels[chrom]['contact']))]
-                bmatrix = g.bchr(chrom, max_distance=max_distance)
-                for i in range(len(labels[chrom]['contact'])):
-                    x,y = labels[chrom]['contact'][i]
-                    mat,meta = bmatrix.square(x,y,w,'b')
-                    Xs[chrom][i].append(np.concatenate((mat.flatten(), meta)))
-
-            # write data to hdf5
-            for i in range(len(labels[chrom]['label'])):
-                _Xs = np.vstack(Xs[chrom][i])
-                _X  = np.vstack(X[chrom][i])
-                _target = labels[chrom]['label'][i]
-                _bp1, _bp2 = labels[chrom]['contact'][i]
-                trainingset_H5['label'].create_dataset(str(idx),data=np.asarray([idx, int(chrom.replace('chr', '')), _bp1, _bp2, _target]))
-                grp=trainingset_H5['feature'].create_group(str(idx))
-                grp.create_dataset('X', data=_X)
-                grp.create_dataset('Xs', data=_Xs)
-                idx = idx+1
-            del Xs[chrom],X[chrom]
-        trainingset_H5.attrs['num'] = idx
-        trainingset_H5.close()
-
-    print("go ")
-
-    # load labels with index from h5
-    if skipchrom is not None:
-        _skipchrom = int(skipchrom.replace('chr',''))
-    else:
-        _skipchrom = None
-    if trainingset.endswith('.h5') or trainingset.endswith('.hdf5'):
-        print('reading hdf5')
-        trainingset_H5 = h5py.File(trainingset, 'r')
-        training_index = {0:[],1:[]}
 
 
-        for i in range(trainingset_H5.attrs['num']):
-            value = trainingset_H5['label/'+str(i)][()]
-            if value[1] != _skipchrom:
-                training_index[value[-1]].append(str(value[0])+'_'+str(value[1]))
+    with open(traindata, 'rb') as handle:
+        dataParams,\
+        X_train, Xs_train, y_label_train, \
+        X_test, Xs_test, y_label_test, \
+        X_val, Xs_val, y_label_val = pickle.load(handle)
 
-
-        if oversampling>1:
-            _oversamples = np.random.choice(training_index[1], size=int(len(training_index[1])*(oversampling-1)), replace=True)
-            training_index[1] = training_index[1] + list(_oversamples)
-        else:
-            _samples = np.random.choice(training_index[1], size=int(len(training_index[1]) * oversampling),
-                                               replace=False)
-            training_index[1] = list(_samples)
-        if useallneg:
-            pass
-        else:
-            training_index[0] = np.random.choice(training_index[0], size=int(len(training_index[1])),replace=False)
-
-        y_label = []
-        y_idx = []
-        for key in training_index:
-            y_label = y_label + [key]*len(training_index[key])
-            y_idx = y_idx + list(training_index[key])
-        y_label = np.asarray(y_label)
-        y_idx = np.asarray(y_idx)
-        _argsort_idx = np.argsort(y_idx)
-        y_label = y_label[_argsort_idx]
-        y_idx = y_idx[_argsort_idx]
-
-        print(len(y_label),len(y_idx),y_label.sum())
-        X_train = []
-        Xs_train = []
-        y_label_train = []
-        X_test = []
-        Xs_test = []
-        y_label_test = []
-        X_val = []
-        Xs_val = []
-        y_label_val = []
-        grp = trainingset_H5['feature']
-        print('load data')
-        for i in range(len(y_idx)):
-            idx, chrom = y_idx[i].split('_')
-            x = grp[idx]['X'][:, featureMask]
-            xs = grp[idx]['Xs'][:, featureMask]
-            if chrom in chromTest:
-                X_test.append(x)
-                Xs_test.append(xs)
-                y_label_test.append(y_label[i])
-            elif chrom in chromVal:
-                X_val.append(x)
-                Xs_val.append(xs)
-                y_label_val.append(y_label[i])
-            else:
-                X_train.append(x)
-                Xs_train.append(xs)
-                y_label_train.append(y_label[i])
-        with open(trainingset+'.pkl', 'wb') as handle:
-            pickle.dump((X_train,Xs_train,y_label_train,
-                         X_test,Xs_test,y_label_test,
-                         X_val,Xs_val,y_label_val),handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    elif trainingset.endswith('.pkl'):
-        print('reading pkl')
-        with open(trainingset, 'rb') as handle:
-            X_train,Xs_train,y_label_train,\
-                X_test,Xs_test,y_label_test,\
-                X_val,Xs_val,y_label_val = pickle.load(handle)
-            for i in range(len(X_train)):
-                X_train[i] = X_train[i][:,featureMask]
-                Xs_train[i] = Xs_train[i][:,featureMask]
-
-            for i in range(len(X_test)):
-                X_test[i] = X_test[i][:,featureMask]
-                Xs_test[i] = Xs_test[i][:,featureMask]
-            for i in range(len(X_val)):
-                X_val[i] = X_val[i][:,featureMask]
-                Xs_val[i] = Xs_val[i][:,featureMask]
-
+    for key in dataParams:
+        parameters[key]=dataParams[key]
 
     if eval_ti is None:
         eval_ti = {}
@@ -408,13 +237,6 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
     print('#train:',len(y_label_train))
     print('#test:', len(y_label_test))
     print('#validation:', len(y_label_val))
-
-    if skipchrom is None:
-        prefix = prefix+'_feature'+str(feature)
-    else:
-        prefix = prefix+'_feature'+str(feature) + '_chr' + str(skipchrom)
-
-
     print('#training cases',len(y_label_train))
     if n == -1:
         n = None
@@ -433,41 +255,13 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
         val_data = inMemoryDataset(X_val,Xs_val,y_label_val,samples=None,ti=eval_ti[_k])
         val_dataloaders[_k] = DataLoader(val_data, batch_size=batchsize, shuffle=True,num_workers=1)
 
-
-    ######################################################################################################
-    ##   control set
-    # with open('20K_zeroLoop.h5.pkl', 'rb') as handle:
-    #     _, _, _, _, _, _, \
-    #     _X_val, _Xs_val, _y_label_val = pickle.load(handle)
-    #
-    #     for i in range(len(_X_val)):
-    #         _X_val[i] = _X_val[i][:, featureMask]
-    #         _Xs_val[i] = _Xs_val[i][:, featureMask]
-    #         _y_label_val[i] = 0
-    # val_data = inMemoryDataset(_X_val, _Xs_val, _y_label_val, samples=None, ti=0)
-    # val_dataloaders['control'] = DataLoader(val_data, batch_size=batchsize, shuffle=True, num_workers=1)
-    #
-    # with open('gm12878_chr3Aschr2.h5.pkl', 'rb') as handle:
-    #     _X_val, _Xs_val, _y_label_val,_, _, _, _, _, _ = pickle.load(handle)
-    #
-    #     for i in range(len(_X_val)):
-    #         _X_val[i] = _X_val[i][:, featureMask]
-    #         _Xs_val[i] = _Xs_val[i][:, featureMask]
-    # val_data = inMemoryDataset(_X_val, _Xs_val, _y_label_val, samples=None, ti=0)
-    # val_dataloaders['gm12878_chr3Aschr2'] = DataLoader(val_data, batch_size=batchsize, shuffle=True, num_workers=1)
-
-
-    ######################################################################################################
-
-
-    if 'grouploop' in models.lower():
+    if 'refhic' in models.lower():
         earlyStopping = {'patience':200000000,'loss':np.inf,'wait':0,'model_state_dict':None,'epoch':0,'parameters':None}
+        model = refhicNet(parameters['featureDim'], encoding_dim=encoding_dim, CNNencoder=cnn,
+                          win=2 * parameters['w'] + 1,
+                          classes=parameters['classes']).to(device)
 
-        model = refhicNet(np.sum(featureMask),encoding_dim=encoding_dim,CNNencoder=cnn,win=2*w+1).to(device)
         ema = EMA(model.parameters(), decay=0.999)
-
-        # ema =None
-
 
         criterion = focalLoss(alpha=pw, gamma=2, adaptive=True)
 
@@ -476,12 +270,12 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
             model=contrastivePretrain(model,pretrain_dataloader,0.001,20,device)
             torch.save({
                 'model_state_dict': model.state_dict(),
-            }, prefix + '_groupLoop_pretrain.tar')
+            }, prefix + '_refhicNet-loop_pretrain.tar')
             pass
         ### end of pretrain
 
 
-        TBWriter = SummaryWriter(comment=' '+name)
+        TBWriter = SummaryWriter(comment=' '+prefix)
 
         model.train()
 
@@ -530,7 +324,7 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': testLoss,
                     'parameters': parameters,
-                }, prefix+'_groupLoop_epoch'+str(epoch)+'.tar')
+                }, prefix+'_refhicNet-loop_epoch'+str(epoch)+'.tar')
 
                 if ema:
                     ema.store()
@@ -541,19 +335,19 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
                         'optimizer_state_dict': optimizer.state_dict(),
                         'loss': testLoss,
                         'parameters': parameters,
-                    }, prefix+'_groupLoop_epoch'+str(epoch)+'_ema.tar')
+                    }, prefix+'_refhicNet-loop_epoch'+str(epoch)+'_ema.tar')
                     ema.restore()
 
         print('finsh trying; best model with early stopping is epoch: ',earlyStopping['epoch'], 'loss is ',earlyStopping['loss'])
-        torch.save(earlyStopping, prefix+'_groupLoop_bestModel_state.pt')
+        torch.save(earlyStopping, prefix+'_refhicNet-loop_bestModel_state.pt')
 
 
     if 'baseline' in models.lower():
         # baseline model
         parameters['model']='baselineNet-loop'
-        baselineModel = baselineNet(np.sum(featureMask),encoding_dim=encoding_dim,win=2*w+1).to(device)
+        baselineModel = baselineNet(parameters['featureDim'],encoding_dim=encoding_dim,win=2*parameters['w']+1).to(device)
         ema = EMA(baselineModel.parameters(), decay=0.999)
-        TBWriterB = SummaryWriter(comment=' baseline '+name)
+        TBWriterB = SummaryWriter(comment=' baseline '+prefix)
         baselineModel.train()
         #criterion = torch.nn.BCEWithLogitsLoss()
         criterion = focalLoss(alpha=pw, gamma=2,adaptive=True)
@@ -585,7 +379,7 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': testLoss,
                     'parameters':parameters,
-                }, prefix + '_baseline_epoch' + str(epoch) + '.tar')
+                }, prefix + '_baseline-loop_epoch' + str(epoch) + '.tar')
                 if ema:
                     ema.store()
                     ema.copy_to()
@@ -595,13 +389,13 @@ def train(useallneg,cawr,lm,useadam,cnn,pw,check_point,prefix,lr,name,batchsize,
                         'optimizer_state_dict': optimizer.state_dict(),
                         'loss': testLoss,
                         'parameters': parameters,
-                    }, prefix + '_baseline_epoch' + str(epoch) + '_ema.tar')
+                    }, prefix + '_baseline-loop_epoch' + str(epoch) + '_ema.tar')
                     ema.restore()
 
 
         print('finsh trying; best model with early stopping is epoch: ', earlyStopping['epoch'], 'loss is ',
               earlyStopping['loss'])
-        torch.save(earlyStopping, prefix+'_baseline_bestModel_state.pt')
+        torch.save(earlyStopping, prefix+'_baseline-loop_bestModel_state.pt')
 
 
 

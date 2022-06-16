@@ -4,12 +4,17 @@
 *.bcool
 *.gcool
 
+#ignore experiments folder
+experiments/
+
 #ignore all bed
 *.bedpe
 *.bed
 
+
 #ignore loop
 *.loop
+*pileup.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

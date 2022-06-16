@@ -16,6 +16,7 @@ def shuffleIF(df):
     bin1_id.sort()
     df['bin1_id']=bin1_id
     df['bin2_id'] = df['bin1_id']+df['distance']
+    df['balanced']=0
 
     # sys.exit()
     # shuf=df[['count','balanced']].sample(frac=1)

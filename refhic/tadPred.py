@@ -105,7 +105,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
             models=[]
             for _modelState in modelStates:
                 model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1,
-                                  classes=parameters['classes']).to(
+                                  classes=parameters['classes'],outputAct='tanh').to(
                     device)
                 _modelstate = torch.load(_modelState, map_location='cuda:' + str(gpu))
                 model.load_state_dict( _modelstate['model_state_dict'],strict=False)
@@ -114,7 +114,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
             model = ensembles(models)
         else:
             model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1,
-                              classes=parameters['classes']).to(device)
+                              classes=parameters['classes'],outputAct='tanh').to(device)
             _modelstate = torch.load(modelstate, map_location='cuda:' + str(gpu))
             model.load_state_dict(_modelstate['model_state_dict'])
             model.eval()
@@ -190,18 +190,21 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         result.loc[(result['chrom']==chrom) & (result['type']=='target'),'rBoundary']=np.asarray(rBoundary)
         print('np.sum(rBoundary)', np.sum(rBoundary))
         print('np.sum()',np.sum(result[result['chrom'] == chrom]['rBoundary']))
+    # result=result[result['type']=='target'].reset_index(drop=True)
     result.to_csv(output,sep='\t',index=False,header=False)
 
 
     from matplotlib import pylab as plt
-    x = pd.read_csv(output, sep='\t', header=None)
-    plt.figure()
+    data = pd.read_csv(output, sep='\t', header=None)
 
-    plt.plot(x[x[7] == 'target'][1] / 5000, x[x[7] == 'target'][3], label='target')
-
-    plt.plot(x[x[7] == 'decoy'][1] / 5000, x[x[7] == 'decoy'][3], label='decoy')
-    plt.legend()
-    plt.show()
+    for chrom in set(data[0]):
+        x=data[data[0]==chrom]
+        plt.figure()
+        plt.plot(x[x[7] == 'target'][1] / 5000, x[x[7] == 'target'][3], label='target')
+        plt.plot(x[x[7] == 'decoy'][1] / 5000, x[x[7] == 'decoy'][3], label='decoy')
+        plt.legend()
+        plt.title(chrom)
+        plt.show()
 
 
 
