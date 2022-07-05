@@ -3,7 +3,7 @@ import pandas as pd
 from torch.utils.data import DataLoader
 from refhic.models import refhicNet
 from torch_ema import ExponentialMovingAverage as EMA
-
+import torchmetrics
 import numpy as np
 from refhic.bcooler import bcool
 import click
@@ -54,7 +54,9 @@ def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,TBWri
     iters = len(train_dataloader)
 
     for batch_idx,X in enumerate(train_dataloader):
+
         target = X[-1][...,0,:].to(device)
+
         X[1] = X[1].to(device)
         X[2] = X[2].to(device)
 
@@ -80,11 +82,16 @@ def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,TBWri
     preds=torch.vstack(preds).flatten()
     targets=torch.vstack(targets).flatten()
 
+
+
     loss = criterion(preds, targets)
+    pearson = torchmetrics.PearsonCorrCoef()
+    corr = pearson(preds,targets)
 
 
     if TBWriter:
         TBWriter.add_scalar("Loss/train", loss, epoch)
+        TBWriter.add_scalar('PCC/tarin',corr,epoch)
 
 
     return loss
@@ -96,6 +103,8 @@ def testModel(model, test_dataloaders,criterion, device,epoch,TBWriter=None,ema=
     if ema:
         ema.store()
         ema.copy_to()
+
+    pearson = torchmetrics.PearsonCorrCoef()
 
 
     with torch.no_grad():
@@ -126,8 +135,11 @@ def testModel(model, test_dataloaders,criterion, device,epoch,TBWriter=None,ema=
             loss = torch.mean(criterion(preds, targets))
             losses.append(loss)
 
+            corr = pearson(preds, targets)
+
             if TBWriter:
                 TBWriter.add_scalar("Loss/test/"+key, loss, epoch)
+                TBWriter.add_scalar("PCC/test/" + key, corr, epoch)
 
         if ema:
             ema.restore()
@@ -152,11 +164,12 @@ def seed_worker(worker_id):
 @click.option('--check_point',type=str,default=None,help='checkpoint')
 @click.option('--cnn',type=bool,default=True,help='cnn encoder [True]')
 @click.option('--useadam',type=bool,default=True,help='USE adam [True]')
-@click.option('--lm',type=bool,default=True,help='large memory')
+@click.option('--lm',type=bool,default=False,help='large memory')
+@click.option('--loss',type=str,default='l2',help='loss function l1,l2, bce. [l2]')
 @click.option('--cawr',type=bool,default=False,help ='CosineAnnealingWarmRestarts [False]')
 @click.argument('traindata', type=str,required=True)
 @click.argument('prefix', type=str,required=True)
-def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, traindata, n,ti,encoding_dim,eval_ti):
+def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, traindata,loss, n,ti,encoding_dim,eval_ti):
     """Train RefHiC for TAD boundary annotation
 
     \b
@@ -200,6 +213,19 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
         X_test, Xs_test, y_label_test, \
         X_val, Xs_val, y_label_val = pickle.load(handle)
 
+
+    if loss == 'bce':
+        for i in range(len(y_label_train)):
+            y_label_train[i][0]=(y_label_train[i][0]+1)/2
+            y_label_train[i][1] = (y_label_train[i][1] + 1) / 2
+        for i in range(len(y_label_test)):
+            y_label_test[i][0] = (y_label_test[i][0] + 1) / 2
+            y_label_test[i][1] = (y_label_test[i][1] + 1) / 2
+        for i in range(len(y_label_val)):
+            y_label_val[i][0] = (y_label_val[i][0] + 1) / 2
+            y_label_val[i][1] = (y_label_val[i][1] + 1) / 2
+
+
     for key in dataParams:
         parameters[key]=dataParams[key]
 
@@ -229,13 +255,25 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
 
     earlyStopping = {'patience':200000000,'loss':np.inf,'wait':0,'model_state_dict':None,'epoch':0,'parameters':None}
 
-    model = refhicNet(parameters['featureDim'],encoding_dim=encoding_dim,CNNencoder=cnn,win=2*parameters['w']+1,
-                      classes=parameters['classes'],outputAct='tanh').to(device)
+    if loss=='bce':
+        model = refhicNet(parameters['featureDim'], encoding_dim=encoding_dim, CNNencoder=cnn,
+                          win=2 * parameters['w'] + 1,
+                          classes=parameters['classes'], outputAct=torch.sigmoid).to(device)
+    else:
+        model = refhicNet(parameters['featureDim'],encoding_dim=encoding_dim,CNNencoder=cnn,win=2*parameters['w']+1,
+                      classes=parameters['classes'],outputAct=torch.tanh).to(device)
 
     ema = EMA(model.parameters(), decay=0.999)
 
-    lossfn = torch.nn.MSELoss()
-
+    if loss=='l2':
+        lossfn = torch.nn.MSELoss()
+    elif loss=='l1':
+        lossfn = torch.nn.L1Loss()
+    elif loss=='bce':
+        lossfn = torch.nn.BCELoss()
+    else:
+        print(loss, ' is not supported...')
+        sys.exit(0)
     TBWriter = SummaryWriter(comment=' '+prefix)
 
     model.train()
@@ -255,7 +293,8 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
         scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50)
     else:
         scheduler = None
-        scheduler2 = CosineScheduler(int(epochs*0.9), warmup_steps=5, base_lr=lr, final_lr=1e-6)
+        scheduler2 = CosineScheduler(int(epochs*0.9), warmup_steps=5, base_lr=lr, final_lr=lr)
+        # schedulerLR = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20,50], gamma=0.1)
 
     for epoch in tqdm(range(0, epochs)):
         if not cawr:
@@ -265,6 +304,8 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
 
         trainLoss=trainModel(model,train_dataloader, optimizer, lossfn, epoch, device,TBWriter=TBWriter,scheduler=scheduler,ema=ema)
         testLoss=testModel(model,val_dataloaders, lossfn,device,epoch,TBWriter=TBWriter,ema=None)
+        # if not cawr:
+        #     schedulerLR.step()
 
         if testLoss < earlyStopping['loss'] and earlyStopping['wait']<earlyStopping['patience']:
             earlyStopping['loss'] = testLoss

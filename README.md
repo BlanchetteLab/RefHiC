@@ -1,4 +1,4 @@
-# RefHiC: A reference panel guided topological structure annotation of Hi-C data
+# RefHiC: Reference panel guided topological structure annotation of Hi-C data
 
 We suggest users run RefHiC on GPU. But, you can also run RefHiC on CPU for TAD/loop annotations. Model training on CPU is almost impossible. 
 ## Installation
@@ -13,7 +13,7 @@ Follow https://pytorch.org/get-started/locally/ to install pytorch. It might be 
 <pre>
 pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 </pre>
-
+l
 Install additional library:
 <pre>
 pip install torchmetrics
@@ -30,6 +30,8 @@ After RefHiC installation, you need to initialize RefHiC. It loads reference pan
 <pre>
 refhic config init</pre>
 Then you will be asked to select (1) download the default reference panel or (2) load your own panel. The default one (~3GB) is for hg38 and contains 30 samples. The easiest way to run RefHiC is to load the default panel.
+
+<b>Our reference panel and trained models are for data at 5000 resolution only!</b>
 ## loop annotation
 It involves two steps,
 1. Get a list of candidate loops <pre>refhic loop pred</pre> It outputs candidate loops from both the target (i.e. input contact map) and decoy (i.e. permuted target)
@@ -60,7 +62,7 @@ NB: We believe you can still use our trained models with your own reference pane
 The core steps are get labelled data and study Hi-C contact maps.
 1. <b> Labelled data:</b> Similar to our manuscript, you have at least two options. (1) Whenever orthogonal data existed (i.e. ChIA-PET, HiCHIP, etc.), use them to get positive cases. For negative cases please refer to our paper. (2) If you don't have high quality orthogonal data, you may get labels by applying conventional tools on the most high quality contact map that you have to get labels. 
 2. <b> contact maps: </b> One significant contribution of RefHiC is the introducing of data augmentation by downsampling technique. So you need to downsample your original contact map into a series of downsamplings. You can do it by applying <i>FANC</i> on .mcool or use <i>shuf</i> to shuffle contact pair list and run 4DN pipeline to create .mcool for downsamplings.  
-3. run the following command to create training dataset, you will be asked to provide labels (i.e. foci) and comma separated downsampled .mcool files: <pre>refhic util traindata</pre>  
+3. run the following command to create training dataset, you will be asked to provide labels (i.e. foci) and comma separated downsampled .mcool files: <pre>refhic util traindata</pre>  You wiil be aksed to select window size. We found win=21 (i.e. w=10) for loop and win=41 (i.e. w=20) for TAD work well for 5kb data.
 4. train loop model: <pre>refhic loop train</pre> train TAD model <pre>refhic tad train</pre> labelled data (foci) format:<pre>
       chr1 bin1_start bin1_end chr2 bin2_start bin2_end class_1 <class_2 ...></pre> You could have more than one label for each training case (i.e. TAD has two labels (left,right), loop has one label)
       

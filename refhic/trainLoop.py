@@ -64,11 +64,9 @@ def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,TBWri
         else:
             output = model(X[1].to(device))
 
-        preds.append(torch.sigmoid(output[...,[-1]].cpu()))
+        preds.append(torch.sigmoid(output.cpu()))
         targets.append(target.cpu())
-
-        loss = criterion(output, target.repeat(1,output.shape[-1]))
-
+        loss = criterion(output.flatten(), target.flatten())
 
         loss.backward()
         # torch.nn.utils.clip_grad_norm_(model.parameters(),1)
@@ -85,7 +83,7 @@ def trainModel(model,train_dataloader, optimizer, criterion, epoch, device,TBWri
 
     loss = criterion(preds, targets)
     acc = torchmetrics.functional.accuracy(preds, targets.to(int))
-    f1 = torchmetrics.functional.f1(preds, targets.to(int))
+    f1 = torchmetrics.functional.f1_score(preds, targets.to(int))
     precision, recall = torchmetrics.functional.precision_recall(preds, targets.to(int))
     positive = torch.sum(preds >= 0.5)
     negative = torch.sum(preds < 0.5)
@@ -145,7 +143,7 @@ def testModel(model, test_dataloaders,criterion, device,epoch,TBWriter=None,base
             loss = torch.mean(criterion(preds, targets))
             losses.append(loss)
             acc = torchmetrics.functional.accuracy(preds, targets.to(int))
-            f1 = torchmetrics.functional.f1(preds, targets.to(int))
+            f1 = torchmetrics.functional.f1_score(preds, targets.to(int))
             precision, recall = torchmetrics.functional.precision_recall(preds, targets.to(int))
             positive = torch.sum(preds >= 0.5)
             negative = torch.sum(preds < 0.5)
@@ -303,7 +301,7 @@ def train(cawr,lm,useadam,cnn,pw,check_point,prefix,lr,batchsize, epochs, gpu, t
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = scheduler2(epoch)
 
-            trainLoss=trainModel(model,train_dataloader, optimizer, criterion, epoch, device,batchsize,TBWriter=TBWriter,scheduler=scheduler,ema=ema)
+            trainLoss=trainModel(model,train_dataloader, optimizer, criterion, epoch, device,TBWriter=TBWriter,scheduler=scheduler,ema=ema)
             testLoss=testModel(model,val_dataloaders, criterion,device,epoch,TBWriter=TBWriter,ema=None)
 
             # schedulerLR.step()
@@ -361,7 +359,7 @@ def train(cawr,lm,useadam,cnn,pw,check_point,prefix,lr,batchsize, epochs, gpu, t
         for epoch in tqdm(range(epochs)):
             for param_group in optimizer.param_groups:
                 param_group['lr'] = scheduler2(epoch)
-            trainModel(baselineModel,train_dataloader, optimizer, criterion, epoch, device,batchsize,TBWriter=TBWriterB,baseline=True,scheduler=scheduler,ema=ema)
+            trainModel(baselineModel,train_dataloader, optimizer, criterion, epoch, device,TBWriter=TBWriterB,baseline=True,scheduler=scheduler,ema=ema)
             testLoss=testModel(baselineModel,val_dataloaders, criterion,device,epoch,TBWriter=TBWriterB,baseline=True)
 
             if testLoss < earlyStopping['loss'] and earlyStopping['wait'] < earlyStopping['patience']:

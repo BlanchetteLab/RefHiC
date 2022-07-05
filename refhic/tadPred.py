@@ -38,9 +38,12 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
     if modelstate is None:
         modelstate=config['tad']['model']
     parameters = torch.load(modelstate.split(';')[0],map_location='cuda:'+ str(gpu))['parameters']
-
+    # print(parameters)
     print('***************************')
-    print('Model:',parameters['model'])
+    if 'model' not in parameters:
+        print('Model: unknown')
+    else:
+        print('Model:',parameters['model'])
     print('Resolution:',parameters['resol'])
     print('window size:',parameters['w']*2+1)
     print('***************************')
@@ -77,7 +80,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
     extraBcools = [bcool(file_path + '::/resolutions/' + str(parameters['resol'])) for file_path in
                    reference['file'].to_list()]
     if chrom is None:
-        chrom = ['chr'+str(i) for i in range(1,23)]
+        chrom = list(testBcool.chroms()['name'][:])
     else:
         if 'chr' in chrom:
             chrom = chrom.split(',')
@@ -89,7 +92,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
     for _chrom in chrom:
         print('analyzing chromosome ',_chrom,' ...')
         bmatrix = [testBcool.bchr(_chrom, max_distance=max_distance, decoy=False),
-                   testBcool.bchr(_chrom, max_distance=max_distance, decoy=True)]
+                   testBcool.bchr(_chrom, max_distance=max_distance, decoy=True,restrictDecoy=False)]
 
         bmatrices = [x.bchr(_chrom,max_distance=max_distance) for x in extraBcools]
 
@@ -105,7 +108,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
             models=[]
             for _modelState in modelStates:
                 model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1,
-                                  classes=parameters['classes'],outputAct='tanh').to(
+                                  classes=parameters['classes'],outputAct=torch.tanh).to(
                     device)
                 _modelstate = torch.load(_modelState, map_location='cuda:' + str(gpu))
                 model.load_state_dict( _modelstate['model_state_dict'],strict=False)
@@ -114,7 +117,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
             model = ensembles(models)
         else:
             model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1,
-                              classes=parameters['classes'],outputAct='tanh').to(device)
+                              classes=parameters['classes'],outputAct=torch.tanh).to(device)
             _modelstate = torch.load(modelstate, map_location='cuda:' + str(gpu))
             model.load_state_dict(_modelstate['model_state_dict'])
             model.eval()
@@ -168,7 +171,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         decoyPeaks, decoyPeakProperties = find_peaks(decoyLScore, height=-1, distance=5, plateau_size=0)
 
         heightCutoff = fdr(targetPeakProperties['peak_heights'], decoyPeakProperties['peak_heights'], alpha=alpha)
-        print(heightCutoff)
+        # print(heightCutoff)
         for j in range(len(targetPeaks)):
             if targetPeakProperties['peak_heights'][j] >= heightCutoff:
                 lBoundary[targetPeaks[j]] = 1
@@ -181,7 +184,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         decoyPeaks, decoyPeakProperties = find_peaks(decoyRScore, height=-1, distance=5, plateau_size=0)
 
         heightCutoff = fdr(targetPeakProperties['peak_heights'], decoyPeakProperties['peak_heights'], alpha=alpha)
-        print(heightCutoff)
+        # print(heightCutoff)
 
         for j in range(len(targetPeaks)):
             if targetPeakProperties['peak_heights'][j] >= heightCutoff:
@@ -189,7 +192,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         result.loc[(result['chrom']==chrom) & (result['type']=='target'),'lBoundary']=np.asarray(lBoundary)
         result.loc[(result['chrom']==chrom) & (result['type']=='target'),'rBoundary']=np.asarray(rBoundary)
         print('np.sum(rBoundary)', np.sum(rBoundary))
-        print('np.sum()',np.sum(result[result['chrom'] == chrom]['rBoundary']))
+        print('np.sum(lBoundary)', np.sum(lBoundary))
     # result=result[result['type']=='target'].reset_index(drop=True)
     result.to_csv(output,sep='\t',index=False,header=False)
 

@@ -116,13 +116,16 @@ class bcoolsDataset(Dataset):
         self.max_distance_bins = self.test[0].max_distance_bins
         self.resol = resol
 
-        bin2bp = dict((v, k) for k, v in self.test[0].bp2bin.items())
-        nne = np.argwhere(self.test[0].bmatrix > 0)
-        # nne = nne[ (nne[:, 1] > w+1) & (nne[:, 1] < self.test.bmatrix.shape[1] - 2*w)& (nne[:, 0]+nne[:, 1] < self.test.bmatrix.shape[0] - 2*w)]
-        nne = nne[(nne[:, 1] > 5) & (nne[:, 1] < self.test[0].bmatrix.shape[1] - 2 * w) & (
-                    nne[:, 0] + nne[:, 1] < self.test[0].bmatrix.shape[0] - 2 * w-1)]
-        nne = nne[ (nne[:,0]>3*w) & (nne[:,0]<self.test[0].bmatrix.shape[0]-2*w)]
-        self.nne = [(bin2bp[x + self.test[0].offset], bin2bp[y + x + self.test[0].offset]) for x, y in nne]
+        self.nne = []
+        for i in range(len(test)):
+            bin2bp = dict((v, k) for k, v in self.test[i].bp2bin.items())
+            nne = np.argwhere(self.test[i].bmatrix > 0)
+
+            nne = nne[(nne[:, 1] > 5) & (nne[:, 1] < self.test[i].bmatrix.shape[1] - 2 * w) & (
+                        nne[:, 0] + nne[:, 1] < self.test[i].bmatrix.shape[0] - 2 * w-1)]
+            nne = nne[ (nne[:,0]>3*w) & (nne[:,0]<self.test[i].bmatrix.shape[0]-2*w)]
+            self.nne += [(bin2bp[x + self.test[i].offset], bin2bp[y + x + self.test[i].offset]) for x, y in nne]
+        self.nne=list(dict.fromkeys(self.nne))
 
     def __selectSamples(self,N,n=1):
         '''
@@ -243,15 +246,19 @@ class bedpewriter():
     def __init__(self,file_path, resol):
         self.f = open(file_path,'w')
         self.resol = resol
-    def write(self,chrom,x,y,prob,val,p2ll,labels):
+    def write(self,chrom,x,y,prob,val,p2ll,labels,isbad=None):
         for i in range(len(x)):
-            self.f.write(chrom+'\t'+str(x[i])+'\t'+str(x[i]+self.resol)
-                         +'\t'+chrom+'\t'+str(y[i])+'\t'+str(y[i]+self.resol)
-                         +'\t'+str(prob[i])
-                         +'\t'+str(val[i])
-                         + '\t' + str(p2ll[i])
-                         + '\t' + str(labels[i])
-                         +'\n')
+            if isbad is not None and isbad[i]:
+                # print('skip bad ',labels[i])
+                pass
+            else:
+                self.f.write(chrom+'\t'+str(x[i])+'\t'+str(x[i]+self.resol)
+                             +'\t'+chrom+'\t'+str(y[i])+'\t'+str(y[i]+self.resol)
+                             +'\t'+str(prob[i])
+                             +'\t'+str(val[i])
+                             + '\t' + str(p2ll[i])
+                             + '\t' + str(labels[i])
+                             +'\n')
 
 class bcoolDataset(Dataset):
     def __init__(self, test,w,resol):

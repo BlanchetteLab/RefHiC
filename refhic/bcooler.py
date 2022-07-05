@@ -10,17 +10,27 @@ def shuffleIFWithCount(df):
     return df
 
 def shuffleIF(df):
+    if len(df)<10:
+        df = shuffleIFWithCount(df)
+        return df
     min=np.min(df['bin1_id'])
     max=np.max(df['bin1_id'])
-    bin1_id=np.random.randint(min, high=max, size=len(df))
-    bin1_id.sort()
-    df['bin1_id']=bin1_id
-    df['bin2_id'] = df['bin1_id']+df['distance']
-    df['balanced']=0
-
-    # sys.exit()
-    # shuf=df[['count','balanced']].sample(frac=1)
-    # df[['count','balanced']]=shuf[['count','balanced']].to_numpy()
+    distance = df['distance'].iloc[0]
+    bin1_id = np.random.randint(min, high=max, size=int(len(df)*1.5))
+    bin2_id = bin1_id + distance
+    pair_id = set(zip(bin1_id,bin2_id))
+    if len(pair_id)<len(df)-50:
+        bin1_id = np.random.randint(min, high=max, size=len(df))
+        bin2_id = bin1_id + distance
+        extra_pair_id = set(zip(bin1_id,bin2_id))
+        pair_id.update(extra_pair_id)
+    if len(pair_id)<len(df):
+        df = df.sample(len(pair_id))
+    pair_id = list(pair_id)
+    random.shuffle(pair_id)
+    pair_id=np.asarray(pair_id[:len(df)])
+    df['bin1_id']=pair_id[:,0]
+    df['bin2_id'] = pair_id[:,1]
     return df
 
 class bandmatrix():
@@ -319,6 +329,7 @@ class bcool(cooler.Cooler):
         pixels=pixels[(pixels['bin2_id']-pixels['bin1_id']).abs()<max_distance//resol].reset_index(drop=True)
 
         if decoy:
+            np.random.seed(0)
             pixels['distance']=(pixels['bin2_id']-pixels['bin1_id']).abs()
             if restrictDecoy:
                 pixels = pixels.groupby('distance').apply(shuffleIFWithCount)

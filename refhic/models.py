@@ -171,8 +171,8 @@ class refhicNet(nn.Module):
 
 
         output = self.predictor(torch.cat((x, testEncoding), -1))
-        if self.outputAct=='tanh':
-            output=torch.tanh(output)
+        if self.outputAct is not None:
+            output=self.outputAct(output)
         if returnAtten:
             return output,alpha
         return output

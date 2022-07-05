@@ -27,7 +27,7 @@ length={'chr1': 248956422,
 for key in length:
   length[key] = length[key]//5000*5000
 
-w = 5000*21
+w = 5000*61
 for line in sys.stdin:
   items=line.strip().split()
   if int(items[4])//5000*5000-w>0 and int(items[4])//5000*5000+w < length[items[0]] and int(items[1])//5000*5000-w>0 and int(items[1])//5000*5000+w < length[items[0]]:

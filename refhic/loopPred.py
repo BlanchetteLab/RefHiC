@@ -75,16 +75,50 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
     extraBcools = [bcool(file_path + '::/resolutions/' + str(parameters['resol'])) for file_path in
                    reference['file'].to_list()]
     if chrom is None:
-        chrom = ['chr'+str(i) for i in range(1,23)]
+        chrom =list(testBcool.chroms()['name'][:])
     else:
         if 'chr' in chrom:
             chrom = chrom.split(',')
         else:
             chrom = ['chr'+chr for chr in chrom.split(',')]
 
+    if ';' in modelstate:
+        modelStates=modelstate.split(';')
+        models=[]
+        for _modelState in modelStates:
+            model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1).to(
+                device)
+            _modelstate = torch.load(_modelState, map_location='cuda:' + str(gpu))
+
+            model.load_state_dict(_modelstate['model_state_dict'],strict=False)
+            model.eval()
+            models.append(model)
+        model = ensembles(models)
+    else:
+        model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1).to(device)
+        _modelstate = torch.load(modelstate, map_location='cuda:' + str(gpu))
+        model.load_state_dict(_modelstate['model_state_dict'])
+        model.eval()
+
     for _chrom in chrom:
         print('analyzing chromosome ',_chrom,' ...')
-        bmatrix = [testBcool.bchr(_chrom, max_distance=max_distance,decoy=False),testBcool.bchr(_chrom, max_distance=max_distance,decoy=True,restrictDecoy=True)]
+        bins = testBcool.bins().fetch(_chrom)
+        weights={}
+        for start,weight in zip(list(bins['start']),list(bins['weight'])):
+            weights[start] = weight
+            # print(start,weight)
+        bad={}
+        for start in weights:
+            if np.isnan(weights[start]):
+                bad[start]=True
+            elif start-parameters['resol'] in weights and np.isnan(weights[start-parameters['resol']]):
+                bad[start] = True
+            elif start+parameters['resol'] in weights and np.isnan(weights[start+parameters['resol']]):
+                bad[start] = True
+            else:
+                bad[start] = False
+
+        bmatrix = [testBcool.bchr(_chrom, max_distance=max_distance,decoy=False),testBcool.bchr(_chrom, max_distance=max_distance,decoy=True,restrictDecoy=False)]
         bmatrices = [x.bchr(_chrom,max_distance=max_distance) for x in extraBcools]
 
         if n == -1:
@@ -94,23 +128,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
 
         test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False,num_workers=10,prefetch_factor=2)
 
-        if ';' in modelstate:
-            modelStates=modelstate.split(';')
-            models=[]
-            for _modelState in modelStates:
-                model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1).to(
-                    device)
-                _modelstate = torch.load(_modelState, map_location='cuda:' + str(gpu))
 
-                model.load_state_dict(_modelstate['model_state_dict'],strict=False)
-                model.eval()
-                models.append(model)
-            model = ensembles(models)
-        else:
-            model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1).to(device)
-            _modelstate = torch.load(modelstate, map_location='cuda:' + str(gpu))
-            model.load_state_dict(_modelstate['model_state_dict'])
-            model.eval()
         with torch.no_grad():
             for X in tqdm(test_dataloader):
                 # X:X,Xs,Xcenter,yCenter
@@ -123,18 +141,26 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
                 prob = pred[loop].cpu().numpy().flatten().tolist()
                 frag1 = X[2][0][loop].cpu().numpy().flatten().tolist()
                 frag2 = X[2][1][loop].cpu().numpy().flatten().tolist()
+                isbad = [False] * len(frag1)
+                for i in range(len(frag1)):
+                    if bad[frag1[i]] or bad[frag2[i]]:
+                        isbad[i] = True
                 val=targetX[loop][:,(2*parameters['w']+1)*parameters['w']+parameters['w']].numpy().flatten().tolist()
                 p2ll=targetX[loop][:,(2 * parameters['w'] + 1) * (2 * parameters['w'] + 1) * 2 + (2 * parameters['w'] + 1) * 2 + 1].numpy().flatten().tolist()
-                loopwriter.write(_chrom,frag1,frag2,prob,val,p2ll,['target']*len(p2ll))
+                loopwriter.write(_chrom,frag1,frag2,prob,val,p2ll,['target']*len(p2ll),isbad)
                 # decoy
                 pred = torch.sigmoid(model(decoyX[...,featureMask].to(device),X[1][...,featureMask].to(device))).flatten().cpu()
                 loop = np.argwhere(pred>0.5).flatten()
                 prob = pred[loop].cpu().numpy().flatten().tolist()
                 frag1 = X[2][0][loop].cpu().numpy().flatten().tolist()
                 frag2 = X[2][1][loop].cpu().numpy().flatten().tolist()
+                isbad = [False]*len(frag1)
+                for i in range(len(frag1)):
+                    if bad[frag1[i]] or bad[frag2[i]]:
+                        isbad[i]=True
                 val=decoyX[loop][:,(2*parameters['w']+1)*parameters['w']+parameters['w']].numpy().flatten().tolist()
                 p2ll=decoyX[loop][:,(2 * parameters['w'] + 1) * (2 * parameters['w'] + 1) * 2 + (2 * parameters['w'] + 1) * 2 + 1].numpy().flatten().tolist()
-                loopwriter.write(_chrom,frag1,frag2,prob,val,p2ll,['decoy']*len(p2ll))
+                loopwriter.write(_chrom,frag1,frag2,prob,val,p2ll,['decoy']*len(p2ll),isbad=None)
 
 if __name__ == '__main__':
     pred()

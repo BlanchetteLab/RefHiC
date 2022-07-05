@@ -43,7 +43,7 @@ def fdr(target,decoy,alpha=0.05):
     numOfTarget = 0
     numOfDecoy = 0
     while numOfTarget + numOfDecoy == 0 or numOfDecoy / (numOfTarget+eps) <= alpha:
-        idx = numOfTarget + numOfDecoy
+        idx = np.min([numOfTarget + numOfDecoy,len(val)-1])
         cutoff = val[idx]
         if label[idx]:
             numOfTarget += 1
@@ -103,7 +103,9 @@ def pileup(w,savefig,p2ll,mindistance,resol,maxdistance,foci,mcool,oe):
         foci=foci[foci[4]-foci[1]>mindistance*resol]
         foci=foci[foci[4]-foci[1]<maxdistance*resol]
 
+
     chroms=list(set(foci[0]))
+
 
     n=0
     for chrom in chroms:
@@ -113,7 +115,8 @@ def pileup(w,savefig,p2ll,mindistance,resol,maxdistance,foci,mcool,oe):
             Y = list(fociChr[4])
         else:
             Y=X.copy()
-        bmatrix = bcoolFile.bchr(chrom)
+        bmatrix = bcoolFile.bchr(chrom,decoy=False)
+
         for x,y in zip(X,Y):
             mat,meta= bmatrix.square(x,y,w,oeType)
             pileup+=mat[0,:,:]

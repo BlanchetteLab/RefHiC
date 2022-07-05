@@ -17,7 +17,7 @@ def rhoDelta(data,resol,dc):
     _l=np.asarray(_l)
     data = data[_l>5].reset_index(drop=True)
     # end of remove singleton
-    pos = data[[1, 4]].to_numpy() // 5000
+    pos = data[[1, 4]].to_numpy() // resol
     val = data[6].to_numpy()
 
     posTree = KDTree(pos, leaf_size=30, metric='chebyshev')
@@ -81,14 +81,15 @@ def pool(dc,candidates,resol,mindelta,minscore,output,refine,alpha,verbose):
     data[['rhos','deltas']]=0
     data=data.groupby([0,9]).apply(rhoDelta,resol=resol,dc=dc).reset_index(drop=True)
 
+
     minrho=fdr(data[(data[9]=='target') & (data['deltas']>mindelta)]['rhos'],data[(data[9]=='decoy') & (data['deltas']>mindelta)]['rhos'],alpha=alpha)
 
 
 
     if verbose:
         plt.figure()
-        plt.plot(data[data[9]=='decoy']['rhos'],data[data[9]=='decoy']['deltas'],'.',label='decoy')
-        plt.plot(data[data[9] == 'target']['rhos'], data[data[9] == 'target']['deltas'],'.' ,label='target')
+        plt.plot(data[(data[9]=='decoy') & (data['deltas']>mindelta)]['rhos'],data[(data[9]=='decoy')& (data['deltas']>mindelta)]['deltas'],'.',label='decoy')
+        plt.plot(data[(data[9] == 'target')& (data['deltas']>mindelta)]['rhos'], data[(data[9] == 'target')& (data['deltas']>mindelta)]['deltas'],'.' ,label='target')
         plt.plot([minrho,minrho],[0,np.max(data['deltas'])])
         plt.legend()
         plt.show()
@@ -99,7 +100,7 @@ def pool(dc,candidates,resol,mindelta,minscore,output,refine,alpha,verbose):
     for chrom in set(targetData[0]):
         data = targetData[targetData[0]==chrom].reset_index(drop=True)
 
-        pos = data[[1, 4]].to_numpy() // 5000
+        pos = data[[1, 4]].to_numpy() // resol
         posTree = KDTree(pos, leaf_size=30, metric='chebyshev')
 
         rhos = data['rhos'].to_numpy()
