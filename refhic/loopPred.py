@@ -16,12 +16,13 @@ from refhic.config import checkConfig,loadConfig,referenceMeta
 @click.option('--gpu', type=int, default=0, help='use GPU [0]')
 @click.option('--chrom', type=str, default=None, help='loop  calling for comma separated chroms')
 @click.option('-n', type=int, default=-1, help='sampling n samples from database; -1 for all [-1]')
+@click.option('-t', type=int, default=10, help='number of cpu threads; [10]')
 @click.option('--reference', type=str, default=None, help='a file contains reference panel')
 @click.option('--max_distance', type=int, default=3000000, help='max distance (bp) between contact pairs')
 @click.option('--modelState',type=str,default =None,help='trained model')
 @click.argument('input', type=str,required=True)
 @click.argument('output', type=str,required=True)
-def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,output):
+def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,output,t):
     '''Predict loop candidates from Hi-C contact map'''
 
     if checkConfig():
@@ -126,7 +127,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         else:
             test_data = bcoolsDataset(bmatrix, bmatrices, parameters['w'], parameters['resol'],samples=n)
 
-        test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False,num_workers=10,prefetch_factor=2)
+        test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False,num_workers=t,prefetch_factor=4)
 
 
         with torch.no_grad():

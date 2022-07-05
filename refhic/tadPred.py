@@ -22,9 +22,10 @@ from refhic.util import fdr
 @click.option('--max_distance', type=int, default=3000000, help='max distance (bp) between contact pairs')
 @click.option('--modelState',type=str,default =None,help='trained model')
 @click.option('--alpha',type=float,default =0.05,help='FDR alpha')
+@click.option('-t', type=int, default=10, help='number of cpu threads; [10]')
 @click.argument('input', type=str,required=True)
 @click.argument('output', type=str,required=True)
-def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,output,alpha):
+def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,output,alpha,t):
     '''Predict TAD boundary scores from Hi-C contact map'''
     if checkConfig():
         config=loadConfig()
@@ -101,7 +102,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         else:
             test_data = diagBcoolsDataset(bmatrix, bmatrices, parameters['w'], parameters['resol'],samples=n)
 
-        test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False,num_workers=10,prefetch_factor=2)
+        test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False,num_workers=t,prefetch_factor=4)
 
         if ';' in modelstate:
             modelStates=modelstate.split(';')
