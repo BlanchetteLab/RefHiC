@@ -3,13 +3,10 @@ from refhic.trainLoop import train as trainLoop
 from refhic.loopPred import pred as loopPred
 from refhic.tadPred import pred as tadPred
 from refhic.trainTAD import  train as trainTAD
-from refhic.trainTAD2 import train2 as trainTAD2
-from refhic.tadPred2 import  pred2 as tadPred2
 from refhic.config import config
 from refhic.cool2bcool import cool2bcool
 from refhic.poolLoop import pool
 from refhic.util import  pileup
-from refhic.poolTAD import pool as poolTAD
 from refhic.traindata import traindata
 
 @click.group()
