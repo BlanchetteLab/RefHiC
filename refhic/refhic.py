@@ -49,10 +49,8 @@ loop.add_command(loopPred)
 loop.add_command(pool)
 
 tad.add_command(trainTAD)
-# tad.add_command(trainTAD2)
 tad.add_command(tadPred)
-# tad.add_command(tadPred2)
-# tad.add_command(poolTAD)
+
 
 cli.add_command(config)
 
