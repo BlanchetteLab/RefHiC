@@ -1,4 +1,5 @@
 # RefHiC: Reference panel guided topological structure annotation of Hi-C data
+![RefHiC Model](RefHiC_overview.png "RefHiC")
 
 <b>We suggest users run RefHiC on GPU. 
 You can run RefHiC on CPU for TAD/loop annotations, but it is much slower than on GPU. Model training on CPU is <s>almost</s> impossible.</b>
