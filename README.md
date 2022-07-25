@@ -1,8 +1,11 @@
 # RefHiC: Reference panel guided topological structure annotation of Hi-C data
 
-We suggest users run RefHiC on GPU. But, you can also run RefHiC on CPU for TAD/loop annotations. Model training on CPU is almost impossible. 
+<b>We suggest users run RefHiC on GPU. 
+You can run RefHiC on CPU for TAD/loop annotations, but it is much slower than on GPU. Model training on CPU is <s>almost</s> impossible.</b>
+
 ## Installation
-RefHiC relies on several libraries including pytorch, scipy, etc. We suggest users using conda to create a virtual environment for it. You can run the command snippets below to install RefHiC:
+RefHiC relies on several libraries including pytorch, scipy, etc. 
+We suggest users using conda to create a virtual environment for it (It should also work without using conda, i.e. with pip). You can run the command snippets below to install RefHiC:
 <pre>
 git clone https://github.com/BlanchetteLab/RefHiC.git
 cd RefHiC
@@ -11,20 +14,25 @@ conda activate refhic
 </pre>
 Follow https://pytorch.org/get-started/locally/ to install pytorch. It might be the following command depending on your cuda version:
 <pre>
-pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 </pre>
-l
 Install additional library:
 <pre>
 pip install torchmetrics
 pip install -U git+https://github.com/fadel/pytorch_ema
 pip install tensorboard
-pip install torchlars
 pip install -U scikit-learn
 pip install scipy==1.7.3
-pip install --editable .
 </pre>
- 
+Install RefHiC:
+<pre>pip install --editable .</pre>
+If fail, please try `python setup build` and `python setup install` first.
+### Known compatibility issues
+In RefHiC, we used LARS (torchlars) for contrastive pretraining. However, we find torchlars often introduces many compatibility issues. Thus, we removed LARS from RefHiC. 
+
+If you want to use LARS for model training, please uncomment line 6 and 10 in pretrain.py and install torchlars as follows,
+<pre>pip install torchlars</pre>
+You can also do contrastive pretraining with Adam, but the performance may be slightly worse than with LARS. You could try to increase pre-train epochs for better accuracy.
 ## Initialization (configuration)
 After RefHiC installation, you need to initialize RefHiC. It loads reference panel and trained models into your local space. You can run the following command:
 <pre>
@@ -32,21 +40,54 @@ refhic config init</pre>
 Then you will be asked to select (1) download the default reference panel or (2) load your own panel. The default one (~3GB) is for hg38 and contains 30 samples. The easiest way to run RefHiC is to load the default panel.
 
 <b>Our reference panel and trained models are for data at 5000 resolution only!</b>
-## loop annotation
+## Select the right device in RefHiC
+1. Loop and TAD prediction:
+
+    use CPU: please set <i>--cpu True</i>
+    
+    use GPU: please leave <i>--cpu</i> and <i>--gpu</i> as default vaules or set <i>--gpu</i> as the index of the GPU that you want to use.
+2. Training:
+
+    use CPU: Impossible
+    
+    use GPU: please leave <i>--gpu</i> as default vaules or set <i>--gpu</i> as the index of the GPU that you want to use.
+
+## Loop annotation
 It involves two steps,
 1. Get a list of candidate loops <pre>refhic loop pred</pre> It outputs candidate loops from both the target (i.e. input contact map) and decoy (i.e. permuted target)
+    ### output format
+    It contains tab separated fields as follows:
+    <pre>Chr1    Start1    End1    Chr2    Start2    End2    Score    IF    P2LL    Label</pre>
+    |     Field     |                                  Detail                                 |
+    |:-------------:|:-----------------------------------------------------------------------:|
+    |   Chr1/Chr2   | chromosome names                                                        |
+    | Start1/Start2 | start genomic coordinates                                               |
+    |   End1/End2   | end genomic coordinates (i.e. End1=Start1+resol)                        |
+    |     Score     | RefHiC's loop score [0~1]                                               |
+    |       IF      | Interaction frequency                                                   |
+    |      P2LL     | Peak to lower left ratio [for information only, RefHiC does not use it] |
+    |     Label     | loop candidate is from target/decoy set [will be used in pool]          |
 2. slect loops from loop candidates<pre>refhic loop pool</pre> It outputs loops detected from the target data by FDR control. You may need to increase <i>alpha</i> to 0.1 or higher for very low coverage or low quality Hi-C data to select more loops. Sadlly, it will also produce more false positive annotations.  
+    ### output format
+    Same as above but without the Label field (all loops are from the target).
 ## TAD annotation
 TAD annotation is simply, you can run <pre>refhic tad pred</pre>
 For FDR control, you can to increase <i>alpha</i> to 0.1 or higher for very low coverage or low quality Hi-C data to select more TAD boundaries. Sadlly, you will see more false positive annotations.
 ### output format 
 RefHiC outputs 7 columns tab separated fields (without header) to a file (named user_specific_prefix.bed) for TAD annotation. Each row contains genomic coordinate, boundary scores and 0/1 fields to indicate boundary annotation:
- 
+
 <pre>
-chrom   bp      bp+resol    leftScore   leftBoundary    rightScore      rigihtBoundary 
-chr15   305000  310000      0.0084      0.0             -0.0016         0.0
+Chr    Start    End    LeftScore    LeftBoundary    RightScore    RigihtBoundary
 </pre>
-## sanity check
+|            Field            |                        Detail                       |
+|:---------------------------:|:---------------------------------------------------:|
+|             Chr             | chromosome name                                     |
+|            Start            | start genomic coordinate                            |
+|             End             | end genomic coordinate (i.e. End=Start+resol)       |
+|     LeftScore/RightScore    | boundary scores [-1~1]                              |
+| LeftBoundary/RigihtBoundary | boundary annotations [1: boundary, 0: non-boundary] |
+
+## Sanity check
 It is hard to evaluate TAD or loop annotations in the real experiments as we don't have ground truth. You can use the pileup option for a quick check
 <pre>refhic util pileup</pre> 
 It will produce a pileup image for given foci (i.e. predicted loops or TAD boundaries). You can turn on <i>p2ll</i> option to compute P2LL for the averaged contact pairs. It is helpful for loop analysis.
@@ -79,3 +120,11 @@ User We don't ask to edit config file manually, but you can still do it if you w
 ### 4. How to use local reference panel, or models?
 RefHiC will load reference panel and models from the configuration file by default. But you can still use your own models or reference panel without write them into the configuration file.
 There are two parameters: (1) --reference for reference panel; (2) --modelState for model. You can specific them when you run <i>pred</i> for loop or TAD annotation. The <i>reference</i> parameter takes a meta.csv as input. (NB: <i>file</i> field should contain absolute path to data)
+
+## Citation
+If you use RefHiC in your work, please cite our paper:
+
+## Contact
+A GitHub issue is preferable for all problems related to using RefHiC. 
+
+For other concerns, please email Yanlin Zhang or Mathieu Blanchette (yanlin.zhang2@mail.mcgill.ca, blanchem@cs.mcgill.ca).

@@ -13,7 +13,8 @@ from refhic.config import checkConfig,loadConfig,referenceMeta
 
 @click.command()
 @click.option('--batchsize', type=int, default=2048, help='batch size [2048]')
-@click.option('--gpu', type=int, default=0, help='use GPU [0]')
+@click.option('--cpu', type=bool, default=False, help='Use CPU [False]')
+@click.option('--gpu', type=int, default=None, help='GPU index [auto select]')
 @click.option('--chrom', type=str, default=None, help='loop  calling for comma separated chroms')
 @click.option('-n', type=int, default=-1, help='sampling n samples from database; -1 for all [-1]')
 @click.option('-t', type=int, default=10, help='number of cpu threads; [10]')
@@ -22,7 +23,7 @@ from refhic.config import checkConfig,loadConfig,referenceMeta
 @click.option('--modelState',type=str,default =None,help='trained model')
 @click.argument('input', type=str,required=True)
 @click.argument('output', type=str,required=True)
-def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,output,t):
+def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,output,t,cpu):
     '''Predict loop candidates from Hi-C contact map'''
 
     if checkConfig():
@@ -36,7 +37,24 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
 
     if modelstate is None:
         modelstate=config['loop']['model']
-    parameters = torch.load(modelstate.split(';')[0],map_location='cuda:'+ str(gpu))['parameters']
+
+    if cpu:
+        device = torch.device("cpu")
+        print('use CPU ...')
+    else:
+        if torch.cuda.is_available():
+            if gpu is not None:
+                device = torch.device("cuda:"+str(gpu))
+                print('use gpu '+ "cuda:"+str(gpu))
+            else:
+                gpuIdx = torch.cuda.current_device()
+                device = torch.device(gpuIdx)
+                print('use gpu ' + "cuda:" + str(gpuIdx))
+        else:
+            device = torch.device("cpu")
+            print('GPU is not available, use CPU ...')
+
+    parameters = torch.load(modelstate.split(';')[0],map_location=device)['parameters']
 
     print('***************************')
     print('Model:',parameters['model'])
@@ -46,11 +64,9 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
 
 
     loopwriter = bedpewriter(output,parameters['resol'])
-    if gpu is not None:
-        device = torch.device("cuda:"+str(gpu))
-        print('use gpu '+ "cuda:"+str(gpu))
-    else:
-        device = torch.device("cpu")
+
+
+
     _mask = np.zeros(2 * (parameters['w'] * 2 + 1) ** 2 + 2 * (2 * parameters['w'] + 1) + 4)
     featureMask = parameters['feature'].split(',')
     if '0' in featureMask:
@@ -89,7 +105,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         for _modelState in modelStates:
             model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1).to(
                 device)
-            _modelstate = torch.load(_modelState, map_location='cuda:' + str(gpu))
+            _modelstate = torch.load(_modelState, map_location=device)
 
             model.load_state_dict(_modelstate['model_state_dict'],strict=False)
             model.eval()
@@ -97,7 +113,7 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         model = ensembles(models)
     else:
         model = refhicNet(np.sum(featureMask), encoding_dim=parameters['encoding_dim'],CNNencoder=parameters['cnn'],win=2*parameters['w']+1).to(device)
-        _modelstate = torch.load(modelstate, map_location='cuda:' + str(gpu))
+        _modelstate = torch.load(modelstate, map_location=device)
         model.load_state_dict(_modelstate['model_state_dict'])
         model.eval()
 

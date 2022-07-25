@@ -175,21 +175,21 @@ def seed_worker(worker_id):
 @click.option('--lr', type=float, default=1e-3, help='learning rate')
 @click.option('--batchsize', type=int, default=512, help='batch size')
 @click.option('--epochs', type=int, default=30, help='training epochs')
-@click.option('--gpu', type=int, default=0, help='GPU training')
+@click.option('--gpu', type=int, default=None, help='GPU index [auto select]')
 @click.option('-n', type=int, default=10, help='sampling n samples from database; -1 for all')
 @click.option('--encoding_dim',type = int, default =64,help='encoding dim')
 @click.option('--ti',type = int, default = None, help = 'use the indexed sample from the test group during training if multiple existed; values between [0,n)')
 @click.option('--eval_ti',type = str,default = None, help = 'multiple ti during validating, ti,coverage; ti:coverage,...')
-@click.option('--models',type=str,default ='refhic',help='refhic, or baseline model; [refhic]')
+@click.option('--models',type=str,default ='refhic',help='refhic, or baseline model; baseline model is for development only, donot use it [refhic]')
 @click.option('--check_point',type=str,default=None,help='checkpoint')
 @click.option('--pw',type=float,default=-1,help='alpha for focal loss')
 @click.option('--cnn',type=bool,default=True,help='cnn encoder')
 @click.option('--useadam',type=bool,default=False,help='USE adam')
-@click.option('--lm',type=bool,default=True,help='large memory')
+# @click.option('--lm',type=bool,default=True,help='large memory')
 @click.option('--cawr',type=bool,default=False,help ='CosineAnnealingWarmRestarts')
 @click.argument('traindata', type=str,required=True)
 @click.argument('prefix', type=str,required=True)
-def train(cawr,lm,useadam,cnn,pw,check_point,prefix,lr,batchsize, epochs, gpu, traindata, n,ti,encoding_dim,models,eval_ti):
+def train(cawr,useadam,cnn,pw,check_point,prefix,lr,batchsize, epochs, gpu, traindata, n,ti,encoding_dim,models,eval_ti):
     """Train RefHiC for loop annotation"""
 
     parameters={'cnn':cnn,'encoding_dim':encoding_dim,'model':'refhicNet-loop'}
@@ -197,9 +197,9 @@ def train(cawr,lm,useadam,cnn,pw,check_point,prefix,lr,batchsize, epochs, gpu, t
         device = torch.device("cuda:"+str(gpu))
         print('use gpu '+"cuda:"+str(gpu))
     else:
-        device = torch.device("cpu")
-    if lm:
-        occccccc = torch.zeros((256,1024,18000)).to(device)
+        device = torch.device("cuda")
+    # if lm:
+    #     occccccc = torch.zeros((256,1024,18000)).to(device)
 
     if eval_ti is not None:
         _eval_ti = {}
@@ -278,7 +278,7 @@ def train(cawr,lm,useadam,cnn,pw,check_point,prefix,lr,batchsize, epochs, gpu, t
         model.train()
 
         if check_point:
-            _modelstate = torch.load(check_point, map_location='cuda:' + str(gpu))
+            _modelstate = torch.load(check_point, map_location=device)
             if 'model_state_dict' in _modelstate:
                 _modelstate = _modelstate['model_state_dict']
             model.load_state_dict(_modelstate)

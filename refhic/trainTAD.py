@@ -156,7 +156,7 @@ def seed_worker(worker_id):
 @click.option('--lr', type=float, default=1e-3, help='learning rate [1e-3]')
 @click.option('--batchsize', type=int, default=512, help='batch size [512]')
 @click.option('--epochs', type=int, default=500, help='training epochs [500]')
-@click.option('--gpu', type=int, default=0, help='GPU id [0]')
+@click.option('--gpu', type=int, default=None, help='GPU index [auto select]')
 @click.option('-n', type=int, default=10, help='sampling n samples from database; -1 for all [10]')
 @click.option('--encoding_dim',type = int, default =64,help='encoding dim [64]')
 @click.option('--ti',type = int, default = None, help = 'use the indexed sample from the test group during training if multiple existed; values between [0,n)')
@@ -164,12 +164,11 @@ def seed_worker(worker_id):
 @click.option('--check_point',type=str,default=None,help='checkpoint')
 @click.option('--cnn',type=bool,default=True,help='cnn encoder [True]')
 @click.option('--useadam',type=bool,default=True,help='USE adam [True]')
-@click.option('--lm',type=bool,default=False,help='large memory')
 @click.option('--loss',type=str,default='l2',help='loss function l1,l2, bce. [l2]')
 @click.option('--cawr',type=bool,default=False,help ='CosineAnnealingWarmRestarts [False]')
 @click.argument('traindata', type=str,required=True)
 @click.argument('prefix', type=str,required=True)
-def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, traindata,loss, n,ti,encoding_dim,eval_ti):
+def train(cawr,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, traindata,loss, n,ti,encoding_dim,eval_ti):
     """Train RefHiC for TAD boundary annotation
 
     \b
@@ -188,9 +187,9 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
         device = torch.device("cuda:"+str(gpu))
         print('use gpu '+"cuda:"+str(gpu))
     else:
-        device = torch.device("cpu")
-    if lm:
-        occccccc = torch.zeros((256,1024,18000)).to(device)
+        device = torch.device("cuda")
+    # if lm:
+    #     occccccc = torch.zeros((256,1024,18000)).to(device)
 
     if eval_ti is not None:
         _eval_ti = {}
@@ -279,7 +278,7 @@ def train(cawr,lm,useadam,cnn,check_point,prefix,lr,batchsize, epochs, gpu, trai
     model.train()
 
     if check_point:
-        _modelstate = torch.load(check_point, map_location='cuda:' + str(gpu))
+        _modelstate = torch.load(check_point, map_location=device)
         if 'model_state_dict' in _modelstate:
             _modelstate = _modelstate['model_state_dict']
         model.load_state_dict(_modelstate)

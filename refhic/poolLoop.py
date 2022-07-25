@@ -62,14 +62,13 @@ def rhoDelta(data,resol,dc):
 
 
 @click.command()
-@click.option('--dc', type=int, default=25000, help='distance cutoff for local density calculation in terms of bp. default: 25000')
-@click.option('--minscore', type=float,default=0.5, help='min RefHiC score')
-@click.option('--resol', default=5000, help='resolution')
-# @click.option('--interactive',default=False,type=bool,help='interactive mode for cutoff choosing')
+@click.option('--dc', type=int, default=25000, help='distance cutoff for local density calculation in terms of bp. [25000]')
+@click.option('--minscore', type=float,default=0.5, help='min RefHiC score [0.5]')
+@click.option('--resol', default=5000, help='resolution [5000]')
 @click.option('--alpha', type=float, default=0.05, help='FDR alpha [0.05]')
-@click.option('--mindelta', type=float, default=5, help='min delta')
-@click.option('--refine',type=bool,default = True,help ='refine')
-@click.option('--verbose',type=bool,default =False, help='show plot')
+@click.option('--mindelta', type=float, default=5, help='min distance allowed between two loops [5]')
+@click.option('--refine',type=bool,default = True,help ='refine loops. Should always set as True [True]')
+@click.option('--verbose',type=bool,default =False, help='show plot [False]')
 @click.argument('candidates', type=str,required=True)
 @click.argument('output', type=str,required=True)
 def pool(dc,candidates,resol,mindelta,minscore,output,refine,alpha,verbose):
@@ -159,8 +158,9 @@ def pool(dc,candidates,resol,mindelta,minscore,output,refine,alpha,verbose):
         else:
             loopPds.append(data.loc[centroid])
 
+
     loopPd=pd.concat(loopPds).sort_values(6,ascending=False)
-    loopPd.to_csv(output,sep='\t',header=False, index=False)
+    loopPd[[0,1,2,3,4,5,6,7,8]].to_csv(output,sep='\t',header=False, index=False)
     print(len(loopPd),'loops saved to ',output)
 
 if __name__ == '__main__':

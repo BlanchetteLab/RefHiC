@@ -3,11 +3,11 @@ from torch.nn import functional as F
 import numpy as np
 from tqdm import tqdm
 from einops import rearrange
-from torchlars import LARS
+# from torchlars import LARS
 
 def contrastivePretrain(model,train_dataloader, lr=1e-1, epochs=20, device=None):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr,eps=1e-8)
-    optimizer = LARS(optimizer=optimizer, eps=1e-8, trust_coef=0.001)
+    # optimizer = LARS(optimizer=optimizer, eps=1e-8, trust_coef=0.001)
     for epoch in tqdm(range(epochs)):
         totalLoss=0
         model.train()
@@ -53,7 +53,7 @@ def contrastivePretrain(model,train_dataloader, lr=1e-1, epochs=20, device=None)
             loss.backward()
             optimizer.step()
             totalLoss+=loss
-        print('epoch #',epoch, 'loss=',totalLoss)
+        print('pretrain epoch #',epoch, 'loss=',totalLoss)
 
 
     return model
