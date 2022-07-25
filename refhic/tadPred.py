@@ -205,23 +205,23 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
                 rBoundary[targetPeaks[j]] = 1
         result.loc[(result['chrom']==chrom) & (result['type']=='target'),'lBoundary']=np.asarray(lBoundary)
         result.loc[(result['chrom']==chrom) & (result['type']=='target'),'rBoundary']=np.asarray(rBoundary)
-        print('np.sum(rBoundary)', np.sum(rBoundary))
-        print('np.sum(lBoundary)', np.sum(lBoundary))
-    # result=result[result['type']=='target'].reset_index(drop=True)
-    result.to_csv(output,sep='\t',index=False,header=False)
+        # print('np.sum(rBoundary)', np.sum(rBoundary))
+        # print('np.sum(lBoundary)', np.sum(lBoundary))
+    result=result[result['type']=='target'].reset_index(drop=True)
+    result[['chrom','start','end','lScore','lBoundary','rScore','rBoundary']].to_csv(output,sep='\t',index=False,header=False)
 
 
-    from matplotlib import pylab as plt
-    data = pd.read_csv(output, sep='\t', header=None)
-
-    for chrom in set(data[0]):
-        x=data[data[0]==chrom]
-        plt.figure()
-        plt.plot(x[x[7] == 'target'][1] / 5000, x[x[7] == 'target'][3], label='target')
-        plt.plot(x[x[7] == 'decoy'][1] / 5000, x[x[7] == 'decoy'][3], label='decoy')
-        plt.legend()
-        plt.title(chrom)
-        plt.show()
+    # from matplotlib import pylab as plt
+    # data = pd.read_csv(output, sep='\t', header=None)
+    #
+    # for chrom in set(data[0]):
+    #     x=data[data[0]==chrom]
+    #     plt.figure()
+    #     plt.plot(x[x[7] == 'target'][1] / 5000, x[x[7] == 'target'][3], label='target')
+    #     plt.plot(x[x[7] == 'decoy'][1] / 5000, x[x[7] == 'decoy'][3], label='decoy')
+    #     plt.legend()
+    #     plt.title(chrom)
+    #     plt.show()
 
 
 
