@@ -81,8 +81,6 @@ def init():
         default=input("1. download default reference panel; 2. load your local panel [1] ").strip()
         if default!='2':
             print('We are going to download the reference panel: assembly='+config['reference']['assembly']+', file size='+config['reference']['size']+'.')
-
-        if default!='2':
             refpanelURL=config['reference']['url']
         else:
             localRefFile=input("please specific your local data path: ").strip()
@@ -91,6 +89,12 @@ def init():
                 pass
             else:
                 localRefFile=os.path.abspath(localRefFile)
+            config['reference']['url'] = 'load from local file '+localRefFile
+            config['reference']['size']=str(os.stat(localRefFile).st_size/(1024*1024*1024))+' GB'
+            config['reference']['assembly'] = input("What is the assembly [hg38]: ").strip()
+            if config['reference']['assembly'] is None or config['reference']['assembly']=='':
+                config['reference']['assembly']='hg38'
+
         refpanelURI = input("Where do you want to save it? [" + user_data_dir('refhic') + '] ').strip()
         if refpanelURI is None or refpanelURI == '':
             refpanelURI = user_data_dir('refhic')
@@ -100,13 +104,10 @@ def init():
                 pass
             else:
                 refpanelURI = os.path.abspath(refpanelURI)
-
-            config['reference']['url'] = 'load from local file '+localRefFile
-            config['reference']['size']=str(os.stat(localRefFile).st_size/(1024*1024*1024))+' GB'
-            config['reference']['assembly'] = input("What is the assembly [hg38]: ").strip()
-            if config['reference']['assembly'] is None or config['reference']['assembly']=='':
-                config['reference']['assembly']='hg38'
-
+            if os.path.isdir(refpanelURI):
+                pass
+            else:
+                os.makedirs(refpanelURI)
 
         if default !='2':
             refFilename = os.path.basename(refpanelURL)
