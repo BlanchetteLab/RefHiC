@@ -38,9 +38,12 @@ You can also do contrastive pretraining with Adam, but the performance may be sl
 After RefHiC installation, you need to initialize RefHiC. It loads reference panel and trained models into your local space. You can run the following command:
 <pre>
 refhic config init</pre>
-Then you will be asked to select (1) download the default reference panel or (2) load your own panel. The default one (~3GB) is for hg38 and contains 30 samples. The easiest way to run RefHiC is to load the default panel.
+Then you will be asked to select (1) download the default reference panel or (2) load your own panel. The default one (~3GB) is for hg38 and contains 29 samples. The easiest way to run RefHiC is to load the default panel.
 
-<b>Our reference panel and trained models are for data at 5000 resolution only!</b>
+If you want to use the mouse reference panel (mm10), you need to dowmload it from http://repo.cs.mcgill.ca/PUB/blanchem/RefHiC/mouseRefPanel.zip and deploy it by selecting option (2) load your own panel.
+
+
+<b>Our reference panel and trained models are for data at 5kb resolution only!</b>
 ## Select the right device in RefHiC
 1. Loop and TAD prediction:
 
