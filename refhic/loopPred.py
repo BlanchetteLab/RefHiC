@@ -93,8 +93,10 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
                    reference['file'].to_list()]
     if chrom is None:
         chrom =list(testBcool.chroms()['name'][:])
-        chrom.remove('chrY') # skip it as not all data have 'chrY'
-        chrom.remove('Y')  # skip it as not all data have 'chrY'
+        if 'chrY' in chrom:
+            chrom.remove('chrY') # skip it as not all data have 'chrY'
+        if 'Y' in chrom:
+            chrom.remove('Y')  # skip it as not all data have 'chrY'
     else:
         if 'chr' in chrom:
             chrom = chrom.split(',')
