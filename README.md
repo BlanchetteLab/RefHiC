@@ -4,6 +4,7 @@
 <b>We suggest users run RefHiC on GPU. 
 You can run RefHiC on CPU for TAD/loop annotations, but it is much slower than on GPU. Model training on CPU is <s>almost</s> impossible.</b>
 
+We also provide examples with data for TAD and loop annotations under example folder.
 ## Installation
 RefHiC relies on several libraries including pytorch, scipy, etc. 
 We suggest users using conda to create a virtual environment for it (It should also work without using conda, i.e. with pip). You can run the command snippets below to install RefHiC:
