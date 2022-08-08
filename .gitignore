@@ -1,22 +1,22 @@
 .idea/
 .idea
 # ignore all mcool
-*.mcool
-*.cool
-*.bcool
-*.gcool
+#*.mcool
+#*.cool
+#*.bcool
+#*.gcool
 
 #ignore experiments folder
 experiments/
 
 #ignore all bed
-*.bedpe
-*.bed
+#*.bedpe
+#*.bed
 
 
 #ignore loop
-*.loop
-*pileup.png
+#*.loop
+#*pileup.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
