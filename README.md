@@ -4,7 +4,24 @@
 <b>We suggest users run RefHiC on GPU. 
 You can run RefHiC on CPU for TAD/loop annotations, but it is much slower than on GPU. Model training on CPU is <s>almost</s> impossible.</b>
 
-We also provide examples with data for TAD and loop annotations under example folder.
+We also provide examples with data for TAD and loop annotations under **example folder**.
+
+You can find scripts (i.e. .R and .ipynb scripts) and data to **reproduce our analysis** in the manuscript at https://zenodo.org/record/7007962.
+
+## software dependencies
+RefHiC is developed and tested on Linux machines and relies on the following packages:
+<pre>appdirs==1.4.4
+click==8.0.1
+cooler==0.8.11
+einops
+h5py
+importlib_resources>=5.4.0
+matplotlib
+numpy
+pandas
+requests
+setuptools
+tqdm</pre>
 ## Installation
 RefHiC relies on several libraries including pytorch, scipy, etc. 
 We suggest users using conda to create a virtual environment for it (It should also work without using conda, i.e. with pip). You can run the command snippets below to install RefHiC:
@@ -29,6 +46,9 @@ pip install scipy==1.7.3
 Install RefHiC:
 <pre>pip install --editable .</pre>
 If fail, please try `python setup build` and `python setup install` first.
+
+The installation requires network access to download libraries. Usually, the installation will finish within 5 minutes. The installation time is longer if network access is slow and/or unstable.
+
 ### Known compatibility issues
 In RefHiC, we used LARS (torchlars) for contrastive pretraining. However, we find torchlars often introduces many compatibility issues. Thus, we removed LARS from RefHiC. 
 

@@ -12,11 +12,11 @@ The following command will produce three files:
    2) loops (gm12878_500M_chr17_loop.bedpe); 
    3) pileup around called loops (gm12878_500M_chr17_loop.bedpe.png)
 <pre>
-# calculate loop scores
+# calculate loop scores, ~10 min (GPU)
 refhic loop pred --chrom chr17 gm12878_500M.bcool gm12878_500M_chr17_loopCandidates.bedpe
-# select loops
+# select loops, ~1 min
 refhic loop pool gm12878_500M_chr17_loopCandidates.bedpe gm12878_500M_chr17_loop.bedpe
-# optional, santity check 
+# optional, santity check, ~1 min 
 refhic util pileup  --p2ll True gm12878_500M_chr17_loop.bedpe gm12878_500M.bcool
 </pre>
 
@@ -28,12 +28,12 @@ The following command will produce three files:
    4. pileup around left boundaries (gm12878_500M_chr17_leftBoundary.bed_pileup.png)
    5. pileup around right boundaries (gm12878_500M_chr17_rightBoundary.bed_pileup.png)
 <pre>
-# calculate TAD scores
+# calculate TAD scores, ~5 min  (GPU)
 refhic tad pred --chrom chr17 gm12878_500M.bcool gm12878_500M_chr17_BoundaryScores.bed
 # extract boundary from boundaryScore file
 cat gm12878_500M_chr17_BoundaryScores.bed | awk '{if($5==1)print}' > gm12878_500M_chr17_leftBoundary.bed
 cat gm12878_500M_chr17_BoundaryScores.bed | awk '{if($NF==1)print}' > gm12878_500M_chr17_rightBoundary.bed
-# optional, santity check
+# optional, santity check, ~1 min
 refhic util pileup gm12878_500M_chr17_rightBoundary.bed gm12878_500M.bcool
 refhic util pileup gm12878_500M_chr17_leftBoundary.bed gm12878_500M.bcool
 </pre>
