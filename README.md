@@ -6,7 +6,8 @@ You can run RefHiC on CPU for TAD/loop annotations, but it is much slower than o
 
 We also provide examples with data for TAD and loop annotations under **example folder**.
 
-You can find scripts (i.e. .R and .ipynb scripts) and data to **reproduce our analysis** in the manuscript at https://zenodo.org/record/7007962.
+You can find scripts (i.e. .R and .ipynb scripts) and data to **reproduce our analysis** in the manuscript at 
+https://zenodo.org/record/7011277 .
 
 ## software dependencies
 RefHiC is developed and tested on Linux machines and relies on the following packages:
