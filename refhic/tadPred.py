@@ -12,6 +12,45 @@ from refhic.config import checkConfig,loadConfig,referenceMeta
 import sys
 from refhic.util import fdr
 
+def TADBMatching(tadbfile,output):
+    tadb = pd.read_csv(tadbfile, sep='\t', header=None)
+    TADs = []
+    for chrom in set(tadb[0]):
+        tadbChr = tadb[tadb[0] == chrom].reset_index(drop=True)
+        boundaries = tadbChr[[1, 2, 4, 6]].copy()
+        boundaries[['leftTimes', 'rightTimes']] = 0
+
+        leftIdx = np.argwhere(boundaries[4].to_numpy() == 1).flatten()
+        rightIdx = np.argwhere(boundaries[6].to_numpy() == 1).flatten()
+        if rightIdx[0] < leftIdx[0]:
+            boundaries.loc[0,4] = 1
+        if rightIdx[-1] < leftIdx[-1]:
+            boundaries.loc[-1,6] = 1
+
+        boundaries = boundaries[(boundaries[4] == 1) | (boundaries[6] == 1)].copy().reset_index(drop=True)
+        boundaries.rename({4: 'left', 6: 'right'}, inplace=True, axis='columns')
+
+        for i in range(boundaries.shape[0]):
+            if boundaries['left'][i] == 1:
+                left = boundaries[1][i]
+                for j in range(i + 1, boundaries.shape[0]):
+                    if boundaries['right'][j] == 1:
+                        right = boundaries[1][j]
+                        boundaries.loc[i,'leftTimes'] += 1
+                        boundaries.loc[j,'rightTimes'] += 1
+                        TADs.append([chrom, left, right])
+                        break
+                if boundaries['left'][j] == 1:
+                    continue
+                for j in range(j, boundaries.shape[0]):
+                    if boundaries['right'][j] == 1 and boundaries['rightTimes'][j] == 0:
+                        right = boundaries[1][j]
+                        boundaries.loc[i,'leftTimes'] += 1
+                        boundaries.loc[j,'rightTimes'] += 1
+                        TADs.append([chrom, left, right])
+                    if boundaries['left'][j] == 1:
+                        break
+    pd.DataFrame.from_dict(TADs).to_csv(output, sep='\t', header=False, index=False)
 
 @click.command()
 @click.option('--batchsize', type=int, default=512, help='batch size')
@@ -25,8 +64,8 @@ from refhic.util import fdr
 @click.option('--alpha',type=float,default =0.05,help='FDR alpha')
 @click.option('-t', type=int, default=10, help='number of cpu threads; [10]')
 @click.argument('input', type=str,required=True)
-@click.argument('output', type=str,required=True)
-def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,output,alpha,t,cpu):
+@click.argument('outputprefix', type=str,required=True)
+def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,outputprefix,alpha,t,cpu):
     '''Predict TAD boundary scores from Hi-C contact map'''
     if checkConfig():
         config=loadConfig()
@@ -212,7 +251,8 @@ def pred(batchsize, gpu, chrom, n, input, reference, max_distance,modelstate,out
         # print('np.sum(rBoundary)', np.sum(rBoundary))
         # print('np.sum(lBoundary)', np.sum(lBoundary))
     result=result[result['type']=='target'].reset_index(drop=True)
-    result[['chrom','start','end','lScore','lBoundary','rScore','rBoundary']].to_csv(output,sep='\t',index=False,header=False)
+    result[['chrom','start','end','lScore','lBoundary','rScore','rBoundary']].to_csv(outputprefix+'_BoundaryScore.bed',sep='\t',index=False,header=False)
+    TADBMatching(outputprefix+'_BoundaryScore.bed',outputprefix+'_TAD.bed')
 
 
     # from matplotlib import pylab as plt
