@@ -25,7 +25,7 @@ def TADBMatching(tadbfile,output):
         if rightIdx[0] < leftIdx[0]:
             boundaries.loc[0,4] = 1
         if rightIdx[-1] < leftIdx[-1]:
-            boundaries.loc[-1,6] = 1
+            boundaries.loc[len(boundaries) - 1, 6] = 1
 
         boundaries = boundaries[(boundaries[4] == 1) | (boundaries[6] == 1)].copy().reset_index(drop=True)
         boundaries.rename({4: 'left', 6: 'right'}, inplace=True, axis='columns')
@@ -50,7 +50,9 @@ def TADBMatching(tadbfile,output):
                         TADs.append([chrom, left, right])
                     if boundaries['left'][j] == 1:
                         break
-    pd.DataFrame.from_dict(TADs).to_csv(output, sep='\t', header=False, index=False)
+    TADs=pd.DataFrame.from_dict(TADs)
+    TADs[[1,2]].astype('int32')
+    TADs.to_csv(output, sep='\t', header=False, index=False)
 
 @click.command()
 @click.option('--batchsize', type=int, default=512, help='batch size')
