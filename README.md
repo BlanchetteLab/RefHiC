@@ -100,6 +100,8 @@ It involves two steps,
 TAD annotation is simply, you can run <pre>refhic tad pred</pre>
 For FDR control, you can to increase <i>alpha</i> to 0.1 or higher for very low coverage or low quality Hi-C data to select more TAD boundaries. Sadlly, you will see more false positive annotations.
 ### output format 
+<b>output file 1. Boundary scores:</b>
+
 RefHiC outputs 7 columns tab separated fields (without header) to a file (named user_specific_prefix.bed) for TAD annotation. Each row contains genomic coordinate, boundary scores and 0/1 fields to indicate boundary annotation:
 
 <pre>
@@ -113,6 +115,9 @@ Chr    Start    End    LeftScore    LeftBoundary    RightScore    RigihtBoundary
 |     LeftScore/RightScore    | boundary scores [-1~1]                              |
 | LeftBoundary/RigihtBoundary | boundary annotations [1: boundary, 0: non-boundary] |
 
+<b>output file 2. TAD: </b>
+
+a bed file contains TADs (1 TAD per line) 
 ## Sanity check
 It is hard to evaluate TAD or loop annotations in the real experiments as we don't have ground truth. You can use the pileup option for a quick check
 <pre>refhic util pileup</pre> 
