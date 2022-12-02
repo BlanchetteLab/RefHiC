@@ -159,5 +159,5 @@ Zhang, Y., Blanchette, M. Reference panel guided topological structure annotatio
 
 ## Contact
 A GitHub issue is preferable for all problems related to using RefHiC. 
-l
+
 For other concerns, please email Yanlin Zhang or Mathieu Blanchette (yanlin.zhang2@mail.mcgill.ca, blanchem@cs.mcgill.ca).
