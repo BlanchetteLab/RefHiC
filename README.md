@@ -155,7 +155,9 @@ There are two parameters: (1) --reference for reference panel; (2) --modelState 
 ## Citation
 If you use RefHiC in your work, please cite our paper:
 
+Zhang, Y., Blanchette, M. Reference panel guided topological structure annotation of Hi-C data. Nat Commun 13, 7426 (2022). https://doi.org/10.1038/s41467-022-35231-3
+
 ## Contact
 A GitHub issue is preferable for all problems related to using RefHiC. 
-
+l
 For other concerns, please email Yanlin Zhang or Mathieu Blanchette (yanlin.zhang2@mail.mcgill.ca, blanchem@cs.mcgill.ca).

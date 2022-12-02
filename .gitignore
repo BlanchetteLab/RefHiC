@@ -6,6 +6,15 @@
 #*.bcool
 #*.gcool
 
+Revised/
+bibtex/
+refhic/4DNFIT64Q7A3.mcool
+refhic_reproducibility.zip
+refhic_reproducibility/
+trainingdata.zip
+trainingdata/
+
+
 #ignore experiments folder
 experiments/
 
