@@ -19,14 +19,14 @@ It outputs enhanced contact maps in a bedpe file.
     ### output format
     It contains tab separated fields as follows:
     <pre>Chr1    Start1    End1    Chr2    Start2    End2    enhancedIF    IF</pre>
-    
-    |     Field     |                                  Detail                                 |
-    |:-------------:|:-----------------------------------------------------------------------:|
-    |   Chr1/Chr2   | chromosome names                                                        |
-    | Start1/Start2 | start genomic coordinates                                               |
-    |   End1/End2   | end genomic coordinates (i.e. End1=Start1+resol)                        |
-    |   enhancedIF  | RefHiC-SR enhanced Interaction frequency                                |
-    |       IF      | Interaction frequency                                                   |
+
+|     Field     |                      Detail                      |
+|:-------------:|:------------------------------------------------:|
+|   Chr1/Chr2   |                 chromosome names                 |
+| Start1/Start2 |             start genomic coordinates            |
+|   End1/End2   | end genomic coordinates (i.e. End1=Start1+resol) |
+|   enhancedIF  |     RefHiC-SR enhanced Interaction frequency     |
+|       IF      |               Interaction frequency              |
 
 ## Model training
 NB: RefHiC-SR comes with a pretrained model. You don't need to train your own model in most case.
