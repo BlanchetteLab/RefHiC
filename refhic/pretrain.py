@@ -4,6 +4,7 @@ import numpy as np
 from tqdm import tqdm
 from einops import rearrange
 # from torchlars import LARS
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 def contrastivePretrain(model,train_dataloader, lr=1e-1, epochs=20, device=None):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr,eps=1e-8)
@@ -59,6 +60,41 @@ def contrastivePretrain(model,train_dataloader, lr=1e-1, epochs=20, device=None)
     return model
 
 
+def contrastivePretrainWithoutLabel(model,train_dataloader, lr=1e-3, epochs=50, device=None,temp=1,cos=False):
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr,eps=1e-8)
+    optimizer = LARS(optimizer=optimizer, eps=1e-8, trust_coef=0.001)
+    scheduler = ReduceLROnPlateau(optimizer, 'min',min_lr=1e-6)
+    for epoch in tqdm(range(epochs)):
+        totalLoss=0
+        model.train()
+        for data in train_dataloader:
+            X = data[0]
+            loss = 0
+            batchSize = X.shape[0]
+            if batchSize ==1:
+                continue
+            IDs = np.arange(batchSize) # within batch index, 0,...,batchSize-1
+            instances = X.shape[1]
+            optimizer.zero_grad()
+            X = rearrange(X,'a b c d e -> (a b) c d e')
+            embeddings = model.pretrain(X.to(device)) # B S H (Bx8x64)
+            embeddings = rearrange(embeddings,'(a b) c -> a b c',a=batchSize)
+            for i in range(batchSize):
+                posPair = np.random.choice(instances,2,replace=False)
+                embPosPair = embeddings[i,posPair,:]
+                negIndex = np.random.choice(instances,batchSize-1,replace=True)
+                embBatch_neg_i = embeddings[IDs!=i,negIndex,:]
+                embPos_and_batch_neg = torch.cat([embPosPair[[1]],embBatch_neg_i],dim=0)
+                sim = torch.matmul(embPos_and_batch_neg,rearrange(embPosPair[[0]],'a b -> b a')).flatten()
+                loss-=F.log_softmax(sim/temp,dim=0)[0]
+            loss.backward()
+            optimizer.step()
+            totalLoss+=loss
+        print('pretrain epoch #',epoch, 'loss=',float(totalLoss))
+        scheduler.step(totalLoss)
+
+
+    return model
 
 
 

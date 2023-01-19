@@ -8,6 +8,9 @@ from refhic.cool2bcool import cool2bcool
 from refhic.poolLoop import pool
 from refhic.util import  pileup
 from refhic.traindata import traindata
+from refhic.SRPred import pred as SRPred
+from refhic.trainSR import train as trainSR
+from refhic.CEPTraindata import CEPTraindata
 
 @click.group()
 def cli():
@@ -30,6 +33,11 @@ def loop():
     pass
 
 @cli.group()
+def sr():
+    '''contact map enhancement (Super Resolution)'''
+    pass
+
+@cli.group()
 def tad():
     '''TAD boundary annotation'''
     pass
@@ -42,6 +50,10 @@ def util():
 util.add_command(cool2bcool)
 util.add_command(pileup)
 util.add_command(traindata)
+util.add_command(CEPTraindata)
+
+sr.add_command(trainSR)
+sr.add_command(SRPred)
 
 
 loop.add_command(trainLoop)

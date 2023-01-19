@@ -288,3 +288,73 @@ class bcoolDataset(Dataset):
 
         X = torch.from_numpy(X).float()
         return X,(xCenter,yCenter)
+
+
+import pickle as pkl
+def loadCERandomStudyPkl(file):
+    # with open(file, 'rb') as pickle_file:
+    #     studyMats,referencedMats,targetMat=pkl.load(pickle_file)
+    #     studyMat = studyMats[[np.random.randint(studyMats.shape[0])],...]
+    #     referencedMats = referencedMats[np.random.choice(referencedMats.shape[0], 10, replace=False),...]
+    #     x = np.vstack((studyMat,referencedMats))
+    # return torch.tensor(x)*1000,torch.tensor(targetMat)*1000
+    with open(file, 'rb') as pickle_file:
+        studyMats,referencedMats,targetMat=pkl.load(pickle_file)
+        studyMat = studyMats[[np.random.randint(studyMats.shape[0])],...]
+        referencedMats = referencedMats[[0],...]
+        x = np.vstack((studyMat,referencedMats))
+    return torch.tensor(x)*1000,torch.tensor(targetMat)*1000
+
+
+
+
+class inMemoryCEPDataset(Dataset):
+    def __init__(self, X, Xs, y,samples=None,ti=None,multiTest=False):
+        self.X = X
+        self.Xs = Xs
+        self.y = y
+        self.multiTest=multiTest
+        self.numOfSamples = self.X[0].shape[0]
+        self.numOfExtras = self.Xs[0].shape[0]
+        self.samples = samples
+        self.ti = ti
+
+    def __selectSamples(self,N,n=1):
+        '''
+        :param N: total samples
+        :param n: selected samples
+        :return: masked index
+        '''
+        mask = np.zeros(N)
+        mask[np.random.choice(N, n, replace=False)] = 1
+        return np.ma.make_mask(mask)
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+
+        target = self.y[idx]
+
+        if self.multiTest:
+            X = self.X[idx]
+        elif self.ti is not None:
+            X = self.X[idx][self.ti,:]
+        else:
+            X = self.X[idx][self.__selectSamples(self.numOfSamples),:]
+        if self.samples is not None:
+            Xs = self.Xs[idx][self.__selectSamples(self.numOfExtras,self.samples),:]
+        else:
+            Xs = self.Xs[idx]
+
+        target = torch.tensor(target).float()
+        Xs = torch.from_numpy(Xs).float()
+        X = torch.from_numpy(X).float()
+
+
+        return X,Xs,target
+
+def loadCEPkl(file):
+    with open(file, 'rb') as pickle_file:
+        studyMats, referencedMats, targetMat = pkl.load(pickle_file)
+    return studyMats, referencedMats, targetMat

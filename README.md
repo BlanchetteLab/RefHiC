@@ -1,3 +1,4 @@
+<b>NEW feature:</b> [RefHiC-SR: Reference panel guided super-resolution inference of Hi-C data](SR/README.md) introduced in RefHiC v1.1.
 # RefHiC: Reference panel guided topological structure annotation of Hi-C data
 ![RefHiC Model](RefHiC_overview.png "RefHiC")
 

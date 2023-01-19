@@ -142,10 +142,12 @@ def init():
         config['reference']['uri'] = refpanelURI
         config['tad']['model'] = str(files('refhic').joinpath('model/TAD.tar'))
         config['loop']['model'] = str(files('refhic').joinpath('model/loop.tar'))
+        config['sr']['model'] = str(files('refhic').joinpath('model/RefHiC_SR_model.pt'))
         with open(localConfig, 'w') as configfile:
             config.write(configfile)
         print('TAD model:',config['tad']['model'])
         print('Loop model:',config['loop']['model'])
+        print('SR model:', config['sr']['model'])
         print('Done!')
 
 @click.command()
