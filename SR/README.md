@@ -20,7 +20,7 @@ It outputs enhanced contact maps in a bedpe file.
     It contains tab separated fields as follows:
     <pre>Chr1    Start1    End1    Chr2    Start2    End2    enhancedIF    IF</pre>
     
-   |     Field     |                                  Detail                                 |
+    |     Field     |                                  Detail                                 |
     |:-------------:|:-----------------------------------------------------------------------:|
     |   Chr1/Chr2   | chromosome names                                                        |
     | Start1/Start2 | start genomic coordinates                                               |
