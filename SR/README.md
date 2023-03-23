@@ -7,9 +7,6 @@
 You can run RefHiC-SR on CPU, but it is much slower than on GPU. Model training on CPU is <s>almost</s> impossible.</b>
 
 
-
-
-
 ## Contact enhancement
 NB: Our reference panel is for <b>hg38</b> at <b>5kb</b>. You can follow the [instruction](../README.md) to create your own reference panel.  
 
@@ -37,6 +34,8 @@ NB: RefHiC-SR comes with a pretrained model. You don't need to train your own mo
 2. Training:
 <pre>refhic sr train TRAINDATA VALDATA PREFIX</pre>
 
+You can use scripts in https://doi.org/10.5281/zenodo.7761968
+ to reproduce our experiments.
 ## Citation
 If you use RefHiC in your work, please cite our paper:
 

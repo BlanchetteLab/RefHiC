@@ -90,6 +90,8 @@ def pool(dc,candidates,resol,mindelta,minscore,output,refine,alpha,verbose):
         plt.plot(data[(data[9]=='decoy') & (data['deltas']>mindelta)]['rhos'],data[(data[9]=='decoy')& (data['deltas']>mindelta)]['deltas'],'.',label='decoy')
         plt.plot(data[(data[9] == 'target')& (data['deltas']>mindelta)]['rhos'], data[(data[9] == 'target')& (data['deltas']>mindelta)]['deltas'],'.' ,label='target')
         plt.plot([minrho,minrho],[0,np.max(data['deltas'])])
+        plt.xlabel('rho')
+        plt.ylabel('delta')
         plt.legend()
         plt.show()
 
